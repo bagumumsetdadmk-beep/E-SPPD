@@ -7,6 +7,23 @@ export enum TravelStatus {
   CANCELLED = 'Cancelled'
 }
 
+export type UserRole = 'Admin' | 'Operator' | 'Verificator';
+
+export interface User {
+  id: string;
+  name: string; // Now acts as Username
+  role: UserRole;
+  avatar?: string;
+}
+
+export interface AgencySettings {
+  name: string;        // e.g., PEMERINTAH KABUPATEN DEMAK
+  department: string;  // e.g., SEKRETARIAT DAERAH
+  address: string;     // e.g., Jalan Kyai Singkil 7...
+  contactInfo: string; // e.g., Telp: (0291) ...
+  logoUrl: string;     // Base64 string for image
+}
+
 export interface Employee {
   id: string;
   nip: string;

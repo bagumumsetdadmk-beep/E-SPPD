@@ -17,8 +17,16 @@ import {
   Printer, 
   DollarSign 
 } from 'lucide-react';
-import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory } from '../types';
+import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
+
+const INITIAL_SETTINGS: AgencySettings = {
+  name: 'PEMERINTAH KABUPATEN DEMAK',
+  department: 'SEKRETARIAT DAERAH',
+  address: 'Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511',
+  contactInfo: 'Telepon (0291) 685877, Faksimile (0291) 685625, Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id',
+  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png'
+};
 
 const SPPDManager: React.FC = () => {
   const navigate = useNavigate();
@@ -30,6 +38,7 @@ const SPPDManager: React.FC = () => {
   const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [assignments, setAssignments] = useState<AssignmentLetter[]>([]);
+  const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
 
   // SPPD State
   const [sppds, setSppds] = useState<SPPD[]>(() => {
@@ -78,6 +87,7 @@ const SPPDManager: React.FC = () => {
     const transData = localStorage.getItem('transport_modes');
     const fundData = localStorage.getItem('funding_sources');
     const sigData = localStorage.getItem('signatories');
+    const settingsData = localStorage.getItem('agency_settings');
 
     setEmployees(empData ? JSON.parse(empData) : []);
     setCities(cityData ? JSON.parse(cityData) : []);
@@ -85,6 +95,9 @@ const SPPDManager: React.FC = () => {
     setTransportModes(transData ? JSON.parse(transData) : []);
     setFundingSources(fundData ? JSON.parse(fundData) : []);
     setSignatories(sigData ? JSON.parse(sigData) : []);
+    if (settingsData) {
+      setAgencySettings(JSON.parse(settingsData));
+    }
   }, []);
 
   useEffect(() => {
@@ -191,6 +204,11 @@ const SPPDManager: React.FC = () => {
   };
 
   const handlePrint = (sppd: SPPD) => {
+    // Ensure settings are fresh when printing
+    const settingsData = localStorage.getItem('agency_settings');
+    if (settingsData) {
+      setAgencySettings(JSON.parse(settingsData));
+    }
     setPrintingSppd(sppd);
     setIsPrintModalOpen(true);
   };
@@ -531,17 +549,19 @@ const SPPDManager: React.FC = () => {
                         <div className="flex items-center border-b-[3px] border-black pb-2 mb-4">
                            <div className="w-24 text-center">
                               <img 
-                                src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png" 
+                                src={agencySettings.logoUrl} 
                                 alt="Logo" 
                                 className="h-20 w-auto object-contain mx-auto"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                               />
                            </div>
                            <div className="flex-1 text-center">
-                              <h3 className="text-md font-medium">PEMERINTAH KABUPATEN DEMAK</h3>
-                              <h1 className="text-lg font-bold">SEKRETARIAT DAERAH</h1>
-                              <p className="text-xs">Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511,</p>
-                              <p className="text-xs">Telepon (0291) 685877, Faksimile (0291) 685625</p>
+                              <h3 className="text-md font-medium uppercase">{agencySettings.name}</h3>
+                              <h1 className="text-lg font-bold uppercase">{agencySettings.department}</h1>
+                              {agencySettings.address.split(',').map((part, i) => (
+                                <span key={i} className="text-xs block">{part.trim()}{i < agencySettings.address.split(',').length - 1 ? ',' : ''}</span>
+                              ))}
+                              <p className="text-xs mt-1">{agencySettings.contactInfo}</p>
                            </div>
                         </div>
 
@@ -658,7 +678,7 @@ const SPPDManager: React.FC = () => {
                                   b. Mata Anggaran
                                 </td>
                                 <td className="border border-black p-1">
-                                  a. Sekretariat Daerah<br/>
+                                  a. {agencySettings.department}<br/>
                                   b. {fund?.code || '-'}
                                 </td>
                               </tr>
@@ -683,7 +703,7 @@ const SPPDManager: React.FC = () => {
                          <div className="flex border-b border-black">
                             <div className="w-1/2 border-r border-black p-2"></div>
                             <div className="w-1/2 p-2">
-                               <p>I. Berangkat dari : Sekretariat Daerah Kabupaten Demak</p>
+                               <p>I. Berangkat dari : {agencySettings.department}</p>
                                <p className="pl-4">Ke : {dest?.name}</p>
                                <p className="pl-4">Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
                                <div className="mt-4 text-center">
@@ -709,7 +729,7 @@ const SPPDManager: React.FC = () => {
                             </div>
                             <div className="w-1/2 p-2">
                                <p>Berangkat dari : {dest?.name}</p>
-                               <p className="pl-4">Ke : Sekretariat Daerah Kabupaten Demak</p>
+                               <p className="pl-4">Ke : {agencySettings.department}</p>
                                <p className="pl-4">Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
                                <p className="pl-4">Kepala : </p>
                                <div className="mt-4 text-center">

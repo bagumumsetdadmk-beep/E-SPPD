@@ -23,14 +23,23 @@ import {
   XCircle,
   Settings
 } from 'lucide-react';
-import { AssignmentLetter, Employee, Signatory, City } from '../types';
+import { AssignmentLetter, Employee, Signatory, City, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
+
+const INITIAL_SETTINGS: AgencySettings = {
+  name: 'PEMERINTAH KABUPATEN DEMAK',
+  department: 'SEKRETARIAT DAERAH',
+  address: 'Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511',
+  contactInfo: 'Telepon (0291) 685877, Faksimile (0291) 685625, Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id',
+  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png'
+};
 
 const AssignmentManager: React.FC = () => {
   // Master Data States
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [cities, setCities] = useState<City[]>([]);
+  const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
   
   // Tasks state
   const [tasks, setTasks] = useState<AssignmentLetter[]>(() => {
@@ -71,10 +80,14 @@ const AssignmentManager: React.FC = () => {
     const empData = localStorage.getItem('employees');
     const sigData = localStorage.getItem('signatories');
     const cityData = localStorage.getItem('cities');
+    const settingsData = localStorage.getItem('agency_settings');
     
     setEmployees(empData ? JSON.parse(empData) : []);
     setSignatories(sigData ? JSON.parse(sigData) : []);
     setCities(cityData ? JSON.parse(cityData) : []);
+    if (settingsData) {
+      setAgencySettings(JSON.parse(settingsData));
+    }
   };
 
   useEffect(() => {
@@ -139,6 +152,7 @@ const AssignmentManager: React.FC = () => {
   };
 
   const handleOpenPrint = (task: AssignmentLetter) => {
+    loadMasterData(); // Ensure settings are fresh
     setPrintingTask(task);
     setIsPrintModalOpen(true);
   };
@@ -601,18 +615,19 @@ const AssignmentManager: React.FC = () => {
                  <div className="flex items-center justify-center border-b-[3px] border-black pb-4 mb-6 relative">
                    <div className="absolute left-0 top-0 h-24 w-20 flex items-center justify-center">
                       <img 
-                        src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png" 
+                        src={agencySettings.logoUrl} 
                         alt="Logo" 
                         className="h-20 w-auto object-contain"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                    </div>
                    <div className="text-center w-full ml-10">
-                      <h3 className="text-xl font-medium tracking-wide">PEMERINTAH KABUPATEN DEMAK</h3>
-                      <h1 className="text-2xl font-bold tracking-wider">SEKRETARIAT DAERAH</h1>
-                      <p className="text-sm">Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511,</p>
-                      <p className="text-sm">Telepon (0291) 685877, Faksimile (0291) 685625,</p>
-                      <p className="text-sm">Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id</p>
+                      <h3 className="text-xl font-medium tracking-wide uppercase">{agencySettings.name}</h3>
+                      <h1 className="text-2xl font-bold tracking-wider uppercase">{agencySettings.department}</h1>
+                      {agencySettings.address.split(',').map((part, i) => (
+                        <span key={i} className="text-sm">{part.trim()}{i < agencySettings.address.split(',').length - 1 ? ', ' : ''}</span>
+                      ))}
+                      <p className="text-sm">{agencySettings.contactInfo}</p>
                    </div>
                 </div>
 

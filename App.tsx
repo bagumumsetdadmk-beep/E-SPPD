@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -17,7 +17,8 @@ import {
   Search,
   ChevronRight,
   LogOut,
-  UserCheck
+  UserCheck,
+  Settings
 } from 'lucide-react';
 
 import Dashboard from './components/Dashboard';
@@ -31,6 +32,9 @@ import SPPDManager from './components/SPPDManager';
 import ReceiptManager from './components/ReceiptManager';
 import ReportManager from './components/ReportManager';
 import RecapManager from './components/RecapManager';
+import SettingsManager from './components/SettingsManager';
+import Login from './components/Login';
+import { User, UserRole } from './types';
 
 // Fixed SidebarItem typing by using React.FC which includes standard React attributes like 'key'
 const SidebarItem: React.FC<{ to: string, icon: any, label: string, active: boolean }> = ({ to, icon: Icon, label, active }) => (
@@ -47,7 +51,34 @@ const SidebarItem: React.FC<{ to: string, icon: any, label: string, active: bool
 
 const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Check login status on mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  const handleLogin = (role: UserRole, name: string) => {
+    const newUser: User = {
+      id: Date.now().toString(),
+      name: name,
+      role: role
+    };
+    setUser(newUser);
+    localStorage.setItem('currentUser', JSON.stringify(newUser));
+    navigate('/');
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('currentUser');
+    navigate('/');
+  };
 
   const menuItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -61,10 +92,31 @@ const App: React.FC = () => {
     { to: '/kwitansi', icon: ReceiptIcon, label: 'Kwitansi' },
     { to: '/laporan', icon: BarChart3, label: 'Laporan Perjalanan' },
     { to: '/rekap', icon: BarChart3, label: 'Rekap Data' },
+    { to: '/pengaturan', icon: Settings, label: 'Pengaturan' },
   ];
 
+  // If not logged in, show Login Screen
+  if (!user) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // Get initials for avatar
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  // Get Role Badge Color
+  const getRoleBadgeColor = (role: UserRole) => {
+    switch (role) {
+      case 'Admin': return 'bg-indigo-500 text-white';
+      case 'Operator': return 'bg-emerald-500 text-white';
+      case 'Verificator': return 'bg-amber-500 text-white';
+      default: return 'bg-slate-500 text-white';
+    }
+  };
+
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-slate-50 font-sans">
       {/* Mobile Sidebar Overlay */}
       {!sidebarOpen && (
         <button 
@@ -105,7 +157,16 @@ const App: React.FC = () => {
             ))}
             
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Administrasi SPPD</p>
-            {menuItems.slice(6).map((item) => (
+            {menuItems.slice(6, 11).map((item) => (
+              <SidebarItem 
+                key={item.to} 
+                {...item} 
+                active={location.pathname === item.to} 
+              />
+            ))}
+
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistem</p>
+            {menuItems.slice(11).map((item) => (
               <SidebarItem 
                 key={item.to} 
                 {...item} 
@@ -116,15 +177,18 @@ const App: React.FC = () => {
 
           <div className="p-4 bg-slate-800 m-4 rounded-xl">
             <div className="flex items-center space-x-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white font-bold">
-                AD
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${getRoleBadgeColor(user.role)}`}>
+                {getInitials(user.name)}
               </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Admin User</p>
-                <p className="text-xs text-slate-400">Administrator</p>
+              <div className="overflow-hidden">
+                <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+                <p className="text-xs text-slate-400">{user.role}</p>
               </div>
             </div>
-            <button className="flex items-center space-x-2 text-rose-400 text-sm font-medium hover:text-rose-300 w-full px-2 py-1 rounded transition-colors">
+            <button 
+              onClick={handleLogout}
+              className="flex items-center space-x-2 text-rose-400 text-sm font-medium hover:text-rose-300 w-full px-2 py-1.5 rounded transition-colors hover:bg-slate-700/50"
+            >
               <LogOut size={16} />
               <span>Keluar Sesi</span>
             </button>
@@ -154,8 +218,10 @@ const App: React.FC = () => {
             <div className="h-8 w-px bg-slate-200"></div>
             <div className="flex items-center space-x-2 cursor-pointer group">
               <div className="text-right">
-                <p className="text-sm font-semibold group-hover:text-indigo-600">Senin, 24 Mei 2024</p>
-                <p className="text-xs text-slate-500">Pukul 09:30 WIB</p>
+                <p className="text-sm font-semibold group-hover:text-indigo-600">
+                  {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+                <p className="text-xs text-slate-500">Selamat Datang, {user.role}</p>
               </div>
             </div>
           </div>
@@ -174,6 +240,7 @@ const App: React.FC = () => {
             <Route path="/kwitansi" element={<ReceiptManager />} />
             <Route path="/laporan" element={<ReportManager />} />
             <Route path="/rekap" element={<RecapManager />} />
+            <Route path="/pengaturan" element={<SettingsManager />} />
           </Routes>
         </div>
       </main>
