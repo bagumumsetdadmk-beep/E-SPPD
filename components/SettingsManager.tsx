@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon } from 'lucide-react';
+import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe } from 'lucide-react';
 import { AgencySettings } from '../types';
 
 const INITIAL_SETTINGS: AgencySettings = {
@@ -12,19 +12,49 @@ const INITIAL_SETTINGS: AgencySettings = {
 };
 
 const SettingsManager: React.FC = () => {
+  // Agency Settings State
   const [settings, setSettings] = useState<AgencySettings>(() => {
     const saved = localStorage.getItem('agency_settings');
     return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
   });
 
+  // DB Config State
+  const [dbConfig, setDbConfig] = useState({ url: '', key: '' });
+  const [isDbConnected, setIsDbConnected] = useState(false);
+
   const [previewLogo, setPreviewLogo] = useState<string>(settings.logoUrl);
   const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    // Load DB Config on mount
+    const savedDb = localStorage.getItem('supabase_config');
+    if (savedDb) {
+      setDbConfig(JSON.parse(savedDb));
+      setIsDbConnected(true);
+    }
+  }, []);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem('agency_settings', JSON.stringify(settings));
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+  };
+
+  const handleSaveDb = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (dbConfig.url && dbConfig.key) {
+        localStorage.setItem('supabase_config', JSON.stringify(dbConfig));
+        setIsDbConnected(true);
+    }
+  };
+
+  const handleDisconnectDb = () => {
+      if(confirm('Apakah Anda yakin ingin memutuskan koneksi? Data akan kembali disimpan secara lokal (offline) di browser.')) {
+          localStorage.removeItem('supabase_config');
+          setDbConfig({ url: '', key: '' });
+          setIsDbConnected(false);
+      }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,13 +75,89 @@ const SettingsManager: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pengaturan Instansi</h1>
-          <p className="text-slate-500">Konfigurasi identitas, logo, dan kop surat untuk dokumen cetak.</p>
+          <p className="text-slate-500">Konfigurasi identitas, logo, dan koneksi database.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* FORM SECTION */}
-        <div className="lg:col-span-2">
+        {/* LEFT COLUMN */}
+        <div className="lg:col-span-2 space-y-8">
+          
+          {/* DATABASE CONFIG SECTION */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 overflow-hidden relative">
+             <div className="absolute top-0 right-0 p-4 opacity-5">
+                <Database size={100} />
+             </div>
+             
+             <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4 flex items-center">
+                <Globe size={16} className="mr-2" /> Sinkronisasi Database (Cloud)
+             </h3>
+
+             {!isDbConnected ? (
+               <form onSubmit={handleSaveDb} className="space-y-4 relative z-10">
+                  <p className="text-sm text-slate-500 mb-4">
+                     Hubungkan aplikasi dengan database Supabase untuk sinkronisasi data real-time antar pengguna.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vite Supabase URL</label>
+                    <input 
+                        type="text" 
+                        required
+                        value={dbConfig.url}
+                        onChange={(e) => setDbConfig({...dbConfig, url: e.target.value})}
+                        placeholder="https://xyzcompany.supabase.co"
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vite Supabase Key (Anon/Public)</label>
+                    <input 
+                        type="password" 
+                        required
+                        value={dbConfig.key}
+                        onChange={(e) => setDbConfig({...dbConfig, key: e.target.value})}
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                    />
+                  </div>
+                  <div className="pt-2">
+                     <button 
+                        type="submit"
+                        className="px-6 py-2.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 shadow-lg flex items-center space-x-2 transition-all w-full justify-center"
+                     >
+                        <Database size={18} />
+                        <span>Simpan Koneksi</span>
+                     </button>
+                  </div>
+               </form>
+             ) : (
+                <div className="flex flex-col items-center justify-center py-6 relative z-10 animate-in zoom-in-95 duration-300">
+                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4 shadow-sm">
+                       <ShieldCheck size={32} />
+                    </div>
+                    <h4 className="text-xl font-bold text-emerald-700">Koneksi Database Online</h4>
+                    <p className="text-emerald-600 text-sm font-medium mb-6">Aplikasi terhubung ke Supabase Cloud</p>
+                    
+                    <div className="w-full bg-slate-50 rounded-lg p-4 mb-6 border border-slate-200">
+                       <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
+                          <span className="uppercase font-bold tracking-wider">URL Endpoint</span>
+                          <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold">Active</span>
+                       </div>
+                       <p className="font-mono text-slate-700 truncate">{dbConfig.url}</p>
+                    </div>
+
+                    <button 
+                        onClick={handleDisconnectDb}
+                        className="px-6 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm"
+                     >
+                        <Unplug size={16} />
+                        <span>Putus Koneksi / Reset</span>
+                     </button>
+                </div>
+             )}
+          </div>
+
+          {/* AGENCY SETTINGS FORM */}
           <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
             <div className="space-y-4">
                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Identitas Kop Surat</h3>
