@@ -1,0 +1,7 @@
+{
+  "name": "E-SPPD: Digital Official Travel Management",
+  "description": "A comprehensive digital solution for managing official travel (SPPD), assignments, funding sources, and financial reporting for organizations.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
