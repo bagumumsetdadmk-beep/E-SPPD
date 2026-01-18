@@ -38,9 +38,20 @@ const SettingsManager: React.FC = () => {
     const savedDb = localStorage.getItem('supabase_config');
     
     // INTEGRASI ENV VARS (Vercel/Vite)
-    // Membaca variable VITE_SUPABASE_URL dan VITE_SUPABASE_KEY secara otomatis
-    const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-    const envKey = (import.meta as any).env?.VITE_SUPABASE_KEY;
+    // Menggunakan try-catch untuk mencegah crash jika import.meta tidak didukung
+    let envUrl = '';
+    let envKey = '';
+    
+    try {
+        // Safe access casting
+        const meta = import.meta as any;
+        if (meta && meta.env) {
+            envUrl = meta.env.VITE_SUPABASE_URL || '';
+            envKey = meta.env.VITE_SUPABASE_KEY || '';
+        }
+    } catch (e) {
+        console.warn('Environment variables could not be loaded via import.meta', e);
+    }
 
     if (savedDb) {
       // Prioritas 1: Konfigurasi Manual yang tersimpan di LocalStorage
