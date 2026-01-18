@@ -95,11 +95,11 @@ const Dashboard: React.FC = () => {
             // 2. Hitung SPPD
             const { count: sppdCount } = await client.from('sppds').select('*', { count: 'exact', head: true });
 
-            // 3. Hitung Sisa Anggaran (Total di Funding Sources)
+            // 3. Hitung Total Pagu Anggaran (Total di Funding Sources)
             const { data: funds } = await client.from('funding_sources').select('amount');
-            const totalRemaining = funds ? funds.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0) : 0;
+            const totalFunding = funds ? funds.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0) : 0;
 
-            // 4. Hitung Realisasi & Data Grafik (Dari Receipts)
+            // 4. Hitung Realisasi & Data Grafik (Dari Receipts yang Status = 'Paid')
             const { data: receipts } = await client.from('receipts').select('*');
             
             let totalUsed = 0;
@@ -113,13 +113,11 @@ const Dashboard: React.FC = () => {
                 receipts.forEach((r: any) => {
                     const amount = Number(r.total_amount) || 0;
                     
-                    // Hanya hitung yang sudah lunas (Paid) untuk Realisasi, atau semua untuk estimasi? 
-                    // Kita ambil semua yang statusnya bukan Draft/Rejected agar grafik lebih informatif
-                    if (r.status !== 'Rejected') {
+                    // FIXED: Hanya hitung realisasi jika status 'Paid' (Lunas)
+                    if (r.status === 'Paid') {
                         totalUsed += amount;
 
                         // PIE CHART DATA AGGREGATION
-                        // Parsing JSONB columns manually just in case, though supabase returns objects
                         const daily = typeof r.daily_allowance === 'string' ? JSON.parse(r.daily_allowance) : r.daily_allowance;
                         const trans = typeof r.transport === 'string' ? JSON.parse(r.transport) : r.transport;
                         const fuel = typeof r.fuel === 'string' ? JSON.parse(r.fuel) : r.fuel;
@@ -149,7 +147,7 @@ const Dashboard: React.FC = () => {
             setStats({
                 employees: empCount || 0,
                 sppds: sppdCount || 0,
-                remainingBudget: totalRemaining,
+                remainingBudget: totalFunding - totalUsed, // FIXED: Total Pagu - Realisasi
                 usedBudget: totalUsed
             });
 
@@ -181,35 +179,38 @@ const Dashboard: React.FC = () => {
         const funds = JSON.parse(localStorage.getItem('funding_sources') || '[]');
         const receipts = JSON.parse(localStorage.getItem('receipt_data_v2') || '[]'); // Use v2
 
+        // Hitung Used Budget hanya dari status 'Paid'
         const used = receipts
             .filter((r: any) => r.status === 'Paid')
             .reduce((acc: number, curr: any) => acc + (Number(curr.totalAmount) || 0), 0);
 
-        const remaining = funds.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
+        const totalFunding = funds.reduce((acc: number, curr: any) => acc + (Number(curr.amount) || 0), 0);
 
         setStats({
             employees: emps.length,
             sppds: sppds.length,
-            remainingBudget: remaining,
+            remainingBudget: totalFunding - used, // FIXED
             usedBudget: used
         });
 
-        // Simple breakdown for offline
+        // Simple breakdown for offline (Only Paid)
         let transport = 0, hotel = 0, perdiem = 0, other = 0;
         const monthlySpending: Record<string, number> = {};
 
         receipts.forEach((r: any) => {
-             const amt = Number(r.totalAmount) || 0;
-             if(r.transport?.visible) transport += r.transport.amount;
-             if(r.fuel?.visible) transport += r.fuel.amount;
-             if(r.accommodation?.visible) hotel += r.accommodation.amount;
-             if(r.dailyAllowance?.visible) perdiem += r.dailyAllowance.total;
-             if(r.representation?.visible) other += r.representation.amount;
-             
-             if (r.date) {
-                const date = new Date(r.date);
-                const monthKey = date.toLocaleDateString('id-ID', { month: 'short' });
-                monthlySpending[monthKey] = (monthlySpending[monthKey] || 0) + amt;
+             if (r.status === 'Paid') {
+                 const amt = Number(r.totalAmount) || 0;
+                 if(r.transport?.visible) transport += r.transport.amount;
+                 if(r.fuel?.visible) transport += r.fuel.amount;
+                 if(r.accommodation?.visible) hotel += r.accommodation.amount;
+                 if(r.dailyAllowance?.visible) perdiem += r.dailyAllowance.total;
+                 if(r.representation?.visible) other += r.representation.amount;
+                 
+                 if (r.date) {
+                    const date = new Date(r.date);
+                    const monthKey = date.toLocaleDateString('id-ID', { month: 'short' });
+                    monthlySpending[monthKey] = (monthlySpending[monthKey] || 0) + amt;
+                 }
              }
         });
 
@@ -286,7 +287,7 @@ const Dashboard: React.FC = () => {
           isLoading={isLoading}
           title="Realisasi Anggaran" 
           value={formatCurrencyShort(stats.usedBudget)} 
-          subValue="Total Pembayaran (Kwitansi)"
+          subValue="Total Terbayar (Lunas)"
           icon={Wallet} 
           color={{ bg: 'bg-amber-500', text: 'text-amber-600' }} 
         />
@@ -294,7 +295,7 @@ const Dashboard: React.FC = () => {
           isLoading={isLoading}
           title="Sisa Anggaran" 
           value={formatCurrencyShort(stats.remainingBudget)} 
-          subValue="Saldo Sumber Dana"
+          subValue="Saldo Tersedia"
           icon={Wallet} 
           color={{ bg: 'bg-emerald-500', text: 'text-emerald-600' }} 
         />
@@ -308,7 +309,7 @@ const Dashboard: React.FC = () => {
             <h3 className="font-bold text-slate-800 text-lg">Tren Realisasi Anggaran</h3>
             <div className="flex items-center space-x-2 text-xs font-medium text-slate-500">
                 <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                <span>Pengeluaran per Bulan</span>
+                <span>Pengeluaran per Bulan (Lunas)</span>
             </div>
           </div>
           <div className="h-[300px]">
