@@ -62,10 +62,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                       autoFocus
                     />
                  </div>
-                 <p className="text-xs text-slate-400 mt-1 pl-1">
-                   *Default akses sebagai <b>Administrator</b>. <br/>
-                   *Gunakan kata "operator" atau "verif" pada nama untuk peran spesifik.
-                 </p>
               </div>
 
               {error && (

@@ -13,118 +13,118 @@ const INITIAL_SETTINGS: AgencySettings = {
 };
 
 const SettingsManager: React.FC = () => {
-  // Agency Settings State
-  const [settings, setSettings] = useState<AgencySettings>(() => {
-    const saved = localStorage.getItem('agency_settings');
-    return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
-  });
-
-  // Helper: Get Config Priority (LocalStorage -> Env Vars)
+  // 1. Logic Prioritas Config Database (Env Var > LocalStorage)
   const getInitialDbConfig = () => {
-    // 1. Cek Local Storage (Manual Override)
+    // A. Cek Environment Variables (Vite way)
+    // Menggunakan casting 'any' untuk keamanan TypeScript jika types belum digenerate
+    const env = (import.meta as any).env;
+    const envUrl = env?.VITE_SUPABASE_URL;
+    const envKey = env?.VITE_SUPABASE_KEY;
+
+    if (envUrl && envKey) {
+      // Jika ada Env Vars, return langsung. Jangan gunakan LocalStorage.
+      return { url: envUrl, key: envKey, source: 'env' };
+    }
+
+    // B. Jika Env Vars kosong, cek LocalStorage
     const savedDb = localStorage.getItem('supabase_config');
     if (savedDb) {
       try {
         const parsed = JSON.parse(savedDb);
-        if (parsed.url && parsed.key) return parsed;
+        if (parsed.url && parsed.key) return { ...parsed, source: 'local' };
       } catch (e) {
         console.error("Invalid config in localstorage");
       }
     }
 
-    // 2. Cek Environment Variables (Vercel/Vite)
-    try {
-        const meta = import.meta as any;
-        const envUrl = meta.env?.VITE_SUPABASE_URL;
-        const envKey = meta.env?.VITE_SUPABASE_KEY;
-        
-        if (envUrl && envKey) {
-            console.log("Loaded Supabase config from Environment Variables");
-            return { url: envUrl, key: envKey };
-        }
-    } catch (e) {
-        console.warn("Could not load env vars", e);
-    }
-
-    // 3. Default Kosong
-    return { url: '', key: '' };
+    // C. Default Kosong
+    return { url: '', key: '', source: 'none' };
   };
 
-  // DB Config State - Initialize immediately!
-  const [dbConfig, setDbConfig] = useState<{url: string, key: string}>(getInitialDbConfig);
-  
-  // Connected State - Initialize based on config existence
-  const [isDbConnected, setIsDbConnected] = useState<boolean>(() => {
-    const config = getInitialDbConfig();
-    return !!(config.url && config.key);
+  // State Initialization
+  const initialConfig = getInitialDbConfig();
+  const [dbConfig, setDbConfig] = useState<{url: string, key: string}>(initialConfig);
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(!!(initialConfig.url && initialConfig.key));
+  const [configSource, setConfigSource] = useState<string>(initialConfig.source);
+
+  // State Data Agency
+  const [settings, setSettings] = useState<AgencySettings>(() => {
+    // Load local dulu untuk instant render, nanti ditimpa DB jika connect
+    const saved = localStorage.getItem('agency_settings');
+    return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
   });
 
   const [previewLogo, setPreviewLogo] = useState<string>(settings.logoUrl);
   const [isSaved, setIsSaved] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // New state for DB saving process
+  const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   
-  // Modals for SQL/Policies
+  // Modals
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [showStorageModal, setShowStorageModal] = useState(false);
 
-  // 1. Load Data on Mount if Connected
+  // 2. AUTO FETCH ON MOUNT
+  // Effect ini memastikan jika config ada (baik dari ENV atau Local), data langsung ditarik dari DB.
   useEffect(() => {
-    if (isDbConnected && dbConfig.url && dbConfig.key) {
+    if (dbConfig.url && dbConfig.key) {
       fetchSettingsFromDb(dbConfig);
     }
-  }, []); // Run once on mount
+  }, []); 
 
   const fetchSettingsFromDb = async (config: { url: string; key: string }) => {
       if (!config.url || !config.key) return;
+      
       setIsLoadingData(true);
       try {
           const supabase = createClient(config.url, config.key);
-          // Ambil 1 baris pertama saja (Single Row Pattern)
+          
           const { data, error } = await supabase
             .from('agency_settings')
             .select('*')
             .limit(1)
-            .maybeSingle(); // Gunakan maybeSingle agar tidak error jika kosong
+            .maybeSingle();
 
           if (error) throw error;
 
           if (data) {
-              // Mapping dari snake_case (DB) ke camelCase (App)
+              console.log("Data loaded from Supabase Cloud");
               const newSettings: AgencySettings = {
                   name: data.name,
                   department: data.department,
                   address: data.address,
-                  contactInfo: data.contact_info, // Mapping field
+                  contactInfo: data.contact_info,
                   logoUrl: data.logo_url || INITIAL_SETTINGS.logoUrl
               };
+              // TIMPA STATE LOKAL DENGAN DATA DB
               setSettings(newSettings);
               setPreviewLogo(newSettings.logoUrl);
+              // Update localstorage agar sinkron untuk sesi offline berikutnya
               localStorage.setItem('agency_settings', JSON.stringify(newSettings));
+          } else {
+              console.log("Connected to Supabase, but table is empty. Using defaults.");
           }
-      } catch (err) {
-          console.error("Gagal mengambil data pengaturan:", err);
-          // Jangan disconnect jika error fetch, mungkin hanya tabel belum dibuat
+      } catch (err: any) {
+          console.error("Gagal mengambil data pengaturan:", err.message);
+          // Optional: Tampilkan notif error kecil
       } finally {
           setIsLoadingData(false);
       }
   };
 
-  // 2. Handle Save Logic (Local + Cloud)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
 
-    // A. Simpan Lokal (Selalu dilakukan untuk fallback)
+    // 1. Simpan Lokal
     localStorage.setItem('agency_settings', JSON.stringify(settings));
 
-    // B. Simpan Cloud (Jika terkoneksi)
+    // 2. Simpan Cloud (Jika terkoneksi)
     if (isDbConnected && dbConfig.url && dbConfig.key) {
         try {
             const supabase = createClient(dbConfig.url, dbConfig.key);
 
-            // Cek apakah data sudah ada?
+            // Cek existing
             const { data: existing } = await supabase
                 .from('agency_settings')
                 .select('id')
@@ -132,28 +132,26 @@ const SettingsManager: React.FC = () => {
                 .maybeSingle();
 
             if (existing) {
-                // UPDATE
                 const { error } = await supabase
                     .from('agency_settings')
                     .update({
                         name: settings.name,
                         department: settings.department,
                         address: settings.address,
-                        contact_info: settings.contactInfo, // snake_case
+                        contact_info: settings.contactInfo, // snake_case mapping
                         logo_url: settings.logoUrl,
                         updated_at: new Date()
                     })
                     .eq('id', existing.id);
                 if (error) throw error;
             } else {
-                // INSERT
                 const { error } = await supabase
                     .from('agency_settings')
                     .insert([{
                         name: settings.name,
                         department: settings.department,
                         address: settings.address,
-                        contact_info: settings.contactInfo, // snake_case
+                        contact_info: settings.contactInfo,
                         logo_url: settings.logoUrl
                     }]);
                 if (error) throw error;
@@ -166,21 +164,20 @@ const SettingsManager: React.FC = () => {
         }
     }
 
-    // Feedback UI
     setIsSaving(false);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
 
-  const handleSaveDb = (e: React.FormEvent) => {
+  const handleSaveDbConfig = (e: React.FormEvent) => {
     e.preventDefault();
     if (dbConfig.url && dbConfig.key) {
         try {
-            // Validasi format URL sederhana
-            new URL(dbConfig.url);
+            new URL(dbConfig.url); // Simple validation
             localStorage.setItem('supabase_config', JSON.stringify(dbConfig));
             setIsDbConnected(true);
-            fetchSettingsFromDb(dbConfig); // Auto fetch setelah connect
+            setConfigSource('local');
+            fetchSettingsFromDb(dbConfig); // Trigger fetch manual
         } catch (error) {
             alert("Format URL Supabase tidak valid.");
         }
@@ -188,12 +185,11 @@ const SettingsManager: React.FC = () => {
   };
 
   const handleDisconnectDb = () => {
-      if(confirm('Apakah Anda yakin ingin memutuskan koneksi? Data akan kembali disimpan secara lokal (offline) di browser.')) {
+      if(confirm('Putuskan koneksi? Aplikasi akan kembali ke mode Offline.')) {
           localStorage.removeItem('supabase_config');
-          // Jangan reset dbConfig sepenuhnya jika berasal dari ENV, 
-          // tapi user minta disconnect manual, jadi kita kosongkan state saja.
           setDbConfig({ url: '', key: '' });
           setIsDbConnected(false);
+          setConfigSource('none');
       }
   };
 
@@ -201,7 +197,7 @@ const SettingsManager: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Helper: Gunakan Base64 lokal jika Cloud gagal
+    // Fallback Offline
     const useLocalFallback = () => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -212,13 +208,11 @@ const SettingsManager: React.FC = () => {
         reader.readAsDataURL(file);
     };
 
-    // Validasi Ukuran (2MB)
     if (file.size > 2 * 1024 * 1024) {
         alert("Ukuran file terlalu besar. Maksimal 2MB.");
         return;
     }
 
-    // Jika Terkoneksi DB, Coba Upload
     if (isDbConnected && dbConfig.url && dbConfig.key) {
         setIsUploading(true);
         try {
@@ -227,36 +221,27 @@ const SettingsManager: React.FC = () => {
             const fileName = `logo-${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
-            // Attempt Upload
             const { error: uploadError } = await supabase.storage
                 .from('images')
-                .upload(filePath, file, {
-                    cacheControl: '3600',
-                    upsert: true
-                });
+                .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
             if (uploadError) throw uploadError;
 
-            // Get URL
-            const { data } = supabase.storage
-                .from('images')
-                .getPublicUrl(filePath);
+            const { data } = supabase.storage.from('images').getPublicUrl(filePath);
 
             if (data.publicUrl) {
                 setSettings({ ...settings, logoUrl: data.publicUrl });
                 setPreviewLogo(data.publicUrl);
-                // Kita tidak auto-save settings ke DB di sini, user harus klik Simpan.
             }
 
         } catch (error: any) {
             console.error("Upload Error:", error);
-            alert(`Gagal upload ke Storage Cloud (Supabase): ${error.message}\n\nSistem akan menggunakan mode offline (Base64) untuk logo ini sementara waktu.`);
+            alert(`Gagal upload ke Storage Cloud: ${error.message}. Menggunakan mode offline.`);
             useLocalFallback();
         } finally {
             setIsUploading(false);
         }
     } else {
-        // Mode Offline
         useLocalFallback();
     }
   };
@@ -285,31 +270,24 @@ const SettingsManager: React.FC = () => {
                     <Globe size={16} className="mr-2" /> Sinkronisasi Database (Cloud)
                  </h3>
                  <div className="flex space-x-2 relative z-20">
-                     <button 
-                        onClick={() => setShowStorageModal(true)}
-                        className="text-[10px] font-bold px-2 py-1 bg-amber-50 text-amber-600 rounded border border-amber-100 hover:bg-amber-100 flex items-center"
-                     >
+                     <button onClick={() => setShowStorageModal(true)} className="text-[10px] font-bold px-2 py-1 bg-amber-50 text-amber-600 rounded border border-amber-100 hover:bg-amber-100 flex items-center">
                         <Upload size={10} className="mr-1" /> Fix Storage
                      </button>
-                     <button 
-                        onClick={() => setShowSqlModal(true)}
-                        className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded border border-slate-200 hover:bg-slate-200 flex items-center"
-                     >
+                     <button onClick={() => setShowSqlModal(true)} className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded border border-slate-200 hover:bg-slate-200 flex items-center">
                         <FileCode size={10} className="mr-1" /> SQL Schema
                      </button>
                  </div>
              </div>
 
              {!isDbConnected ? (
-               <form onSubmit={handleSaveDb} className="space-y-4 relative z-10">
+               <form onSubmit={handleSaveDbConfig} className="space-y-4 relative z-10">
                   <p className="text-sm text-slate-500 mb-4">
-                     Hubungkan aplikasi dengan database Supabase untuk sinkronisasi data real-time antar pengguna.
+                     Hubungkan aplikasi dengan database Supabase untuk sinkronisasi data real-time.
                   </p>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Vite Supabase URL</label>
                     <input 
-                        type="text" 
-                        required
+                        type="text" required
                         value={dbConfig.url}
                         onChange={(e) => setDbConfig({...dbConfig, url: e.target.value})}
                         placeholder="https://xyzcompany.supabase.co"
@@ -317,10 +295,9 @@ const SettingsManager: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vite Supabase Key (Anon/Public)</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Vite Supabase Key</label>
                     <input 
-                        type="password" 
-                        required
+                        type="password" required
                         value={dbConfig.key}
                         onChange={(e) => setDbConfig({...dbConfig, key: e.target.value})}
                         placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -328,12 +305,8 @@ const SettingsManager: React.FC = () => {
                     />
                   </div>
                   <div className="pt-2">
-                     <button 
-                        type="submit"
-                        className="px-6 py-2.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 shadow-lg flex items-center space-x-2 transition-all w-full justify-center"
-                     >
-                        <Database size={18} />
-                        <span>Simpan Koneksi</span>
+                     <button type="submit" className="px-6 py-2.5 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 shadow-lg flex items-center space-x-2 transition-all w-full justify-center">
+                        <Database size={18} /><span>Simpan Koneksi</span>
                      </button>
                   </div>
                </form>
@@ -343,7 +316,9 @@ const SettingsManager: React.FC = () => {
                        <ShieldCheck size={32} />
                     </div>
                     <h4 className="text-xl font-bold text-emerald-700">Koneksi Database Online</h4>
-                    <p className="text-emerald-600 text-sm font-medium mb-6">Aplikasi terhubung ke Supabase Cloud</p>
+                    <p className="text-emerald-600 text-sm font-medium mb-6">
+                        {configSource === 'env' ? 'Terhubung via Environment Variables (Auto)' : 'Terhubung via Konfigurasi Manual'}
+                    </p>
                     
                     <div className="w-full bg-slate-50 rounded-lg p-4 mb-6 border border-slate-200">
                        <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
@@ -362,13 +337,12 @@ const SettingsManager: React.FC = () => {
                             <RefreshCw size={16} className={isLoadingData ? "animate-spin" : ""} />
                             <span>Sync Data</span>
                         </button>
-                        <button 
-                            onClick={handleDisconnectDb}
-                            className="px-4 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm"
-                        >
-                            <Unplug size={16} />
-                            <span>Putus Koneksi</span>
-                        </button>
+                        {/* Only allow disconnect if manual config */}
+                        {configSource !== 'env' && (
+                            <button onClick={handleDisconnectDb} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm">
+                                <Unplug size={16} /><span>Putus Koneksi</span>
+                            </button>
+                        )}
                     </div>
                 </div>
              )}
@@ -380,7 +354,7 @@ const SettingsManager: React.FC = () => {
                 <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center backdrop-blur-sm rounded-2xl">
                     <div className="flex flex-col items-center">
                         <Loader2 className="animate-spin text-indigo-600 mb-2" size={32} />
-                        <span className="text-sm font-semibold text-slate-600">Mengambil data dari Database...</span>
+                        <span className="text-sm font-semibold text-slate-600">Sinkronisasi data Cloud...</span>
                     </div>
                 </div>
             )}
@@ -392,13 +366,7 @@ const SettingsManager: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Nama Pemerintahan / Instansi Induk</label>
                   <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
                      <Building2 className="text-slate-400 mr-3" size={18} />
-                     <input 
-                        type="text" 
-                        value={settings.name}
-                        onChange={(e) => setSettings({...settings, name: e.target.value})}
-                        className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium"
-                        placeholder="Contoh: PEMERINTAH KABUPATEN DEMAK"
-                     />
+                     <input type="text" value={settings.name} onChange={(e) => setSettings({...settings, name: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium" placeholder="Contoh: PEMERINTAH KABUPATEN DEMAK" />
                   </div>
                </div>
 
@@ -406,13 +374,7 @@ const SettingsManager: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Nama Unit Kerja / OPD</label>
                   <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
                      <Building2 className="text-slate-400 mr-3" size={18} />
-                     <input 
-                        type="text" 
-                        value={settings.department}
-                        onChange={(e) => setSettings({...settings, department: e.target.value})}
-                        className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium"
-                        placeholder="Contoh: SEKRETARIAT DAERAH"
-                     />
+                     <input type="text" value={settings.department} onChange={(e) => setSettings({...settings, department: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium" placeholder="Contoh: SEKRETARIAT DAERAH" />
                   </div>
                </div>
 
@@ -420,13 +382,7 @@ const SettingsManager: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Alamat Lengkap</label>
                   <div className="flex items-start bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
                      <MapPin className="text-slate-400 mr-3 mt-0.5" size={18} />
-                     <textarea 
-                        value={settings.address}
-                        onChange={(e) => setSettings({...settings, address: e.target.value})}
-                        className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium resize-none"
-                        rows={2}
-                        placeholder="Alamat kantor..."
-                     />
+                     <textarea value={settings.address} onChange={(e) => setSettings({...settings, address: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium resize-none" rows={2} placeholder="Alamat kantor..." />
                   </div>
                </div>
 
@@ -434,13 +390,7 @@ const SettingsManager: React.FC = () => {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Kontak (Telp/Fax/Email/Web)</label>
                   <div className="flex items-start bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
                      <Phone className="text-slate-400 mr-3 mt-0.5" size={18} />
-                     <textarea 
-                        value={settings.contactInfo}
-                        onChange={(e) => setSettings({...settings, contactInfo: e.target.value})}
-                        className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium resize-none"
-                        rows={3}
-                        placeholder="Informasi kontak..."
-                     />
+                     <textarea value={settings.contactInfo} onChange={(e) => setSettings({...settings, contactInfo: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium resize-none" rows={3} placeholder="Informasi kontak..." />
                   </div>
                </div>
             </div>
@@ -466,18 +416,8 @@ const SettingsManager: React.FC = () => {
                   <div className="flex-1">
                      <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Logo Baru</label>
                      <div className="relative">
-                        <input 
-                           type="file" 
-                           accept="image/*"
-                           onChange={handleLogoUpload}
-                           className="hidden" 
-                           id="logo-upload"
-                           disabled={isUploading}
-                        />
-                        <label 
-                           htmlFor="logo-upload"
-                           className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
+                        <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" id="logo-upload" disabled={isUploading} />
+                        <label htmlFor="logo-upload" className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                            <Upload size={16} className="mr-2" />
                            {isUploading ? 'Sedang Upload...' : 'Pilih Gambar...'}
                         </label>
@@ -496,11 +436,7 @@ const SettingsManager: React.FC = () => {
 
             <div className="pt-6 border-t flex items-center justify-end space-x-4">
                {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse">Pengaturan berhasil disimpan!</span>}
-               <button 
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center space-x-2 transition-all disabled:opacity-70 disabled:cursor-wait"
-               >
+               <button type="submit" disabled={isSaving} className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center space-x-2 transition-all disabled:opacity-70 disabled:cursor-wait">
                   {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                   <span>{isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
                </button>
@@ -508,7 +444,7 @@ const SettingsManager: React.FC = () => {
           </form>
         </div>
 
-        {/* PREVIEW SECTION */}
+        {/* PREVIEW SECTION (Right Column) */}
         <div>
            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Preview Kop Surat</h3>
            <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200" style={{ fontFamily: 'Times New Roman, serif' }}>
@@ -518,9 +454,7 @@ const SettingsManager: React.FC = () => {
                        src={previewLogo} 
                        alt="Logo" 
                        className="h-20 w-auto object-contain"
-                       onError={(e) => {
-                           (e.target as HTMLImageElement).src = 'https://placehold.co/100x100?text=Error';
-                       }}
+                       onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/100x100?text=Error'; }}
                     />
                  </div>
                  <div className="text-center w-full pl-2">
@@ -540,7 +474,7 @@ const SettingsManager: React.FC = () => {
                  <div className="h-2 bg-slate-200 w-full rounded"></div>
               </div>
            </div>
-           <p className="text-xs text-slate-400 mt-4 text-center">Tampilan ini akan digunakan pada semua dokumen cetak (Surat Tugas & SPPD).</p>
+           <p className="text-xs text-slate-400 mt-4 text-center">Tampilan ini akan digunakan pada semua dokumen cetak.</p>
         </div>
       </div>
 
