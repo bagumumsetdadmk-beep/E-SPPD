@@ -599,80 +599,229 @@ const ReceiptManager: React.FC = () => {
 
                         // --- LAYOUT LOGIC ---
                         if (participantCount > 5) {
-                            // FORMAT E: REKAPITULASI (> 5 Orang)
+                            // FORMAT D + FORMAT E (> 5 Orang)
                             const tableBorder = "border border-black p-1";
+                            const tableBorderD = "border border-black p-2";
+                            let rowNumD = 1;
+
                             return (
                                 <div>
-                                    <div className="text-center font-bold mb-4 uppercase">
-                                        <h3 className="text-md">REKAPITULASI RINCIAN BIAYA PERJALANAN DINAS</h3>
-                                    </div>
-                                    <div className="mb-4">
-                                        <table>
+                                    {/* --- HALAMAN 1: FORMAT D (COVER RINCIAN) --- */}
+                                    <div className="format-d">
+                                        <div className="text-center font-bold mb-6">
+                                            <h3 className="text-md uppercase">RINCIAN BIAYA PERJALANAN DINAS LEBIH DARI 5 (LIMA) ORANG</h3>
+                                        </div>
+                                        <div className="mb-4 text-xs">
+                                            <table>
+                                                <tbody>
+                                                    <tr><td className="w-40">Lampiran SPPD Nomor</td><td>: {details.sppdNumber}</td></tr>
+                                                    <tr><td>Tanggal</td><td>: {new Date(printingReceipt.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        <table className="w-full border-collapse border border-black text-xs mb-6">
+                                            <thead>
+                                                <tr className="bg-gray-100 text-center">
+                                                    <th className={`${tableBorderD} w-10`}>No.</th>
+                                                    <th className={tableBorderD}>PERINCIAN BIAYA</th>
+                                                    <th className={`${tableBorderD} w-32`}>JUMLAH</th>
+                                                    <th className={`${tableBorderD} w-40`}>KETERANGAN</th>
+                                                </tr>
+                                            </thead>
                                             <tbody>
-                                                <tr><td className="w-40">Lampiran SPPD Nomor</td><td>: {details.sppdNumber}</td></tr>
-                                                <tr><td>Tanggal</td><td>: {new Date(printingReceipt.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}</td></tr>
+                                                {/* Cost Items (Total Lump Sum) */}
+                                                {printingReceipt.dailyAllowance.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Uang Harian*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.dailyAllowance.total.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                {printingReceipt.transport.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Biaya Transport*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.transport.amount.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                {printingReceipt.fuel.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Biaya BBM*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.fuel.amount.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                {printingReceipt.accommodation.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Biaya Penginapan*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.accommodation.amount.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                {printingReceipt.representation.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Uang Representasi*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.representation.amount.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                {printingReceipt.other.visible && (
+                                                    <tr>
+                                                        <td className={`${tableBorderD} text-center`}>{rowNumD++}.</td>
+                                                        <td className={tableBorderD}>Lain-lain*</td>
+                                                        <td className={`${tableBorderD} text-right`}>Rp {printingReceipt.other.amount.toLocaleString()}</td>
+                                                        <td className={`${tableBorderD} text-center`}>Terlampir</td>
+                                                    </tr>
+                                                )}
+                                                
+                                                <tr>
+                                                    <td colSpan={2} className={`${tableBorderD} font-bold`}>JUMLAH</td>
+                                                    <td className={`${tableBorderD} text-right font-bold`}>Rp {printingReceipt.totalAmount.toLocaleString()}</td>
+                                                    <td className={tableBorderD}></td>
+                                                </tr>
+                                                <tr>
+                                                    <td colSpan={4} className={`${tableBorderD} italic`}>
+                                                        Terbilang: {terbilang(printingReceipt.totalAmount)} Rupiah<br/>
+                                                        *Catatan : Jumlah merupakan total dari lampiran
+                                                    </td>
+                                                </tr>
                                             </tbody>
                                         </table>
-                                    </div>
-                                    <table className="w-full border-collapse border border-black text-xs">
-                                        <thead>
-                                            <tr className="bg-gray-100 text-center">
-                                                <th className={tableBorder}>No</th>
-                                                <th className={tableBorder}>Nama Penerima</th>
-                                                <th className={tableBorder}>Uang Harian</th>
-                                                <th className={tableBorder}>Biaya Transport</th>
-                                                <th className={tableBorder}>Biaya Penginapan</th>
-                                                <th className={tableBorder}>Lain-Lain</th>
-                                                <th className={tableBorder}>Total</th>
-                                                <th className={tableBorder}>Tanda Tangan</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {details.employeeIds.map((eid, idx) => {
-                                                const pEmp = employees.find(e => e.id === eid);
-                                                // Simple calculation assumption: Total divided by N
-                                                const uh = (printingReceipt.dailyAllowance.amountPerDay * printingReceipt.dailyAllowance.days);
-                                                const trans = (printingReceipt.transport.amount + printingReceipt.fuel.amount) / participantCount;
-                                                const hotel = printingReceipt.accommodation.amount / participantCount;
-                                                const other = (printingReceipt.other.amount + printingReceipt.representation.amount) / participantCount;
-                                                const subTotal = uh + trans + hotel + other;
 
-                                                return (
-                                                    <tr key={eid}>
-                                                        <td className={`${tableBorder} text-center`}>{idx + 1}</td>
-                                                        <td className={tableBorder}>{pEmp?.name}<br/>NIP: {pEmp?.nip}</td>
-                                                        <td className={`${tableBorder} text-right`}>{uh.toLocaleString()}</td>
-                                                        <td className={`${tableBorder} text-right`}>{trans.toLocaleString()}</td>
-                                                        <td className={`${tableBorder} text-right`}>{hotel.toLocaleString()}</td>
-                                                        <td className={`${tableBorder} text-right`}>{other.toLocaleString()}</td>
-                                                        <td className={`${tableBorder} text-right font-bold`}>{subTotal.toLocaleString()}</td>
-                                                        <td className={tableBorder}></td>
+                                        <div className="flex justify-between items-start text-xs mt-4">
+                                            <div className="w-[40%]">
+                                                <p>Telah dibayar sejumlah</p>
+                                                <p className="font-bold mb-4">Rp {printingReceipt.totalAmount.toLocaleString()}</p>
+                                                <p className="mb-16">Bendahara Pengeluaran</p>
+                                                <p className="font-bold underline">{treasurerEmp?.name}</p>
+                                                <p>NIP. {treasurerEmp?.nip}</p>
+                                            </div>
+                                            <div className="w-[40%]">
+                                                <p>Demak, {new Date(printingReceipt.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}</p>
+                                                <p>Telah menerima jumlah uang sebesar</p>
+                                                <p className="font-bold mb-4">Rp {printingReceipt.totalAmount.toLocaleString()}</p>
+                                                <p className="mb-16">Yang Menerima</p>
+                                                <p className="font-bold underline">(Terlampir)</p>
+                                                <p>NIP.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-6 border-t border-b border-black py-2 text-xs">
+                                            <p className="font-bold text-center mb-2">PERHITUNGAN SPPD RAMPUNG</p>
+                                            <table className="w-full">
+                                                <tbody>
+                                                    <tr>
+                                                        <td className="w-40">Ditetapkan sejumlah</td>
+                                                        <td>: Rp {printingReceipt.totalAmount.toLocaleString()}</td>
                                                     </tr>
-                                                );
-                                            })}
-                                            <tr className="font-bold bg-gray-50">
-                                                <td colSpan={2} className={`${tableBorder} text-center`}>JUMLAH TOTAL</td>
-                                                <td colSpan={5} className={`${tableBorder} text-right`}>Rp {printingReceipt.totalAmount.toLocaleString()}</td>
-                                                <td className={tableBorder}></td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                    
-                                    <div className="flex justify-between mt-8 text-center text-xs">
-                                        <div className="w-1/3">
-                                            <p className="font-bold mb-16">Pengguna Anggaran / KPA</p>
-                                            <p className="font-bold underline">{kpaEmp?.name}</p>
-                                            <p>NIP. {kpaEmp?.nip}</p>
+                                                    <tr>
+                                                        <td>Yang telah dibayar semula</td>
+                                                        <td>: Rp 0</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Sisa kurang / lebih</td>
+                                                        <td>: Rp {printingReceipt.totalAmount.toLocaleString()}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
                                         </div>
-                                        <div className="w-1/3">
-                                            <p className="font-bold mb-16">Pejabat Pelaksana Teknis Kegiatan</p>
-                                            <p className="font-bold underline">{pptkEmp?.name}</p>
-                                            <p>NIP. {pptkEmp?.nip}</p>
+
+                                        <div className="flex justify-between mt-6 text-center text-xs">
+                                            <div className="w-1/2">
+                                                <p className="font-bold mb-16">Pengguna Anggaran / KPA</p>
+                                                <p className="font-bold underline">{kpaEmp?.name}</p>
+                                                <p>NIP. {kpaEmp?.nip}</p>
+                                            </div>
+                                            <div className="w-1/2">
+                                                <p className="font-bold mb-16">Pejabat Pelaksana Teknis Kegiatan</p>
+                                                <p className="font-bold underline">{pptkEmp?.name}</p>
+                                                <p>NIP. {pptkEmp?.nip}</p>
+                                            </div>
                                         </div>
-                                        <div className="w-1/3">
-                                            <p className="font-bold mb-16">Bendahara Pengeluaran</p>
-                                            <p className="font-bold underline">{treasurerEmp?.name}</p>
-                                            <p>NIP. {treasurerEmp?.nip}</p>
+                                    </div>
+
+                                    {/* PAGE BREAK */}
+                                    <div className="page-break"></div>
+
+                                    {/* --- HALAMAN 2: FORMAT E (REKAPITULASI MATRIX) --- */}
+                                    <div className="format-e pt-8">
+                                        <div className="text-center font-bold mb-4 uppercase">
+                                            <h3 className="text-md">REKAPITULASI RINCIAN BIAYA PERJALANAN DINAS</h3>
+                                        </div>
+                                        <div className="mb-4 text-xs">
+                                            <table>
+                                                <tbody>
+                                                    <tr><td className="w-40">Lampiran SPPD Nomor</td><td>: {details.sppdNumber}</td></tr>
+                                                    <tr><td>Tanggal</td><td>: {new Date(printingReceipt.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <table className="w-full border-collapse border border-black text-xs">
+                                            <thead>
+                                                <tr className="bg-gray-100 text-center">
+                                                    <th className={tableBorder}>No</th>
+                                                    <th className={tableBorder}>Nama Penerima</th>
+                                                    <th className={tableBorder}>Uang Harian</th>
+                                                    <th className={tableBorder}>Biaya Transport</th>
+                                                    <th className={tableBorder}>Biaya Penginapan</th>
+                                                    <th className={tableBorder}>Lain-Lain</th>
+                                                    <th className={tableBorder}>Total</th>
+                                                    <th className={tableBorder}>Tanda Tangan</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {details.employeeIds.map((eid, idx) => {
+                                                    const pEmp = employees.find(e => e.id === eid);
+                                                    // Simple calculation assumption: Total divided by N
+                                                    const uh = (printingReceipt.dailyAllowance.amountPerDay * printingReceipt.dailyAllowance.days);
+                                                    const trans = (printingReceipt.transport.amount + printingReceipt.fuel.amount) / participantCount;
+                                                    const hotel = printingReceipt.accommodation.amount / participantCount;
+                                                    const other = (printingReceipt.other.amount + printingReceipt.representation.amount) / participantCount;
+                                                    const subTotal = uh + trans + hotel + other;
+
+                                                    return (
+                                                        <tr key={eid}>
+                                                            <td className={`${tableBorder} text-center`}>{idx + 1}</td>
+                                                            <td className={tableBorder}>{pEmp?.name}<br/>NIP: {pEmp?.nip}</td>
+                                                            <td className={`${tableBorder} text-right`}>{uh.toLocaleString()}</td>
+                                                            <td className={`${tableBorder} text-right`}>{trans.toLocaleString()}</td>
+                                                            <td className={`${tableBorder} text-right`}>{hotel.toLocaleString()}</td>
+                                                            <td className={`${tableBorder} text-right`}>{other.toLocaleString()}</td>
+                                                            <td className={`${tableBorder} text-right font-bold`}>{subTotal.toLocaleString()}</td>
+                                                            <td className={tableBorder}></td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                                <tr className="font-bold bg-gray-50">
+                                                    <td colSpan={2} className={`${tableBorder} text-center`}>JUMLAH TOTAL</td>
+                                                    <td colSpan={5} className={`${tableBorder} text-right`}>Rp {printingReceipt.totalAmount.toLocaleString()}</td>
+                                                    <td className={tableBorder}></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        
+                                        <div className="flex justify-between mt-8 text-center text-xs">
+                                            <div className="w-1/3">
+                                                <p className="font-bold mb-16">Pengguna Anggaran / KPA</p>
+                                                <p className="font-bold underline">{kpaEmp?.name}</p>
+                                                <p>NIP. {kpaEmp?.nip}</p>
+                                            </div>
+                                            <div className="w-1/3">
+                                                <p className="font-bold mb-16">Pejabat Pelaksana Teknis Kegiatan</p>
+                                                <p className="font-bold underline">{pptkEmp?.name}</p>
+                                                <p>NIP. {pptkEmp?.nip}</p>
+                                            </div>
+                                            <div className="w-1/3">
+                                                <p className="font-bold mb-16">Bendahara Pengeluaran</p>
+                                                <p className="font-bold underline">{treasurerEmp?.name}</p>
+                                                <p>NIP. {treasurerEmp?.nip}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -933,6 +1082,7 @@ const ReceiptManager: React.FC = () => {
             background: white;
             color: black;
           }
+          .page-break { page-break-before: always; }
           .print\\:hidden { display: none !important; }
         }
       `}</style>
