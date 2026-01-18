@@ -1,43 +1,37 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle } from 'lucide-react';
+import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
-import { Receipt, SPPD, AssignmentLetter, Employee, City, Signatory, FundingSource } from '../types';
+import { Receipt, SPPD, AssignmentLetter, Employee, City, Signatory, FundingSource, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
-// Helper function for Terbilang
-// FIX: Logic corrected to prevent infinite recursion
+const INITIAL_SETTINGS: AgencySettings = {
+  name: 'PEMERINTAH KABUPATEN DEMAK',
+  department: 'SEKRETARIAT DAERAH',
+  address: 'Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511',
+  contactInfo: 'Telepon (0291) 685877, Faksimile (0291) 685625, Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id',
+  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png'
+};
+
 const terbilang = (nilai: number): string => {
   if (typeof nilai !== 'number' || isNaN(nilai) || !isFinite(nilai)) return "Nol";
   
-  const n = Math.floor(Math.abs(nilai));
+  const n = Math.abs(Math.floor(nilai));
   const angka = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
 
-  if (n < 12) {
-    return " " + angka[n];
-  } else if (n < 20) {
-    return terbilang(n - 10) + " Belas";
-  } else if (n < 100) {
-    return terbilang(Math.floor(n / 10)) + " Puluh" + terbilang(n % 10);
-  } else if (n < 200) {
-    return " Seratus" + terbilang(n - 100);
-  } else if (n < 1000) {
-    return terbilang(Math.floor(n / 100)) + " Ratus" + terbilang(n % 100);
-  } else if (n < 2000) {
-    return " Seribu" + terbilang(n - 1000);
-  } else if (n < 1000000) {
-    return terbilang(Math.floor(n / 1000)) + " Ribu" + terbilang(n % 1000);
-  } else if (n < 1000000000) {
-    return terbilang(Math.floor(n / 1000000)) + " Juta" + terbilang(n % 1000000);
-  } else if (n < 1000000000000) {
-    return terbilang(Math.floor(n / 1000000000)) + " Milyar" + terbilang(n % 1000000000);
-  } else {
-    return "Angka Terlalu Besar";
-  }
+  if (n < 12) return " " + angka[n];
+  if (n < 20) return terbilang(n - 10) + " Belas";
+  if (n < 100) return terbilang(Math.floor(n / 10)) + " Puluh" + terbilang(n % 10);
+  if (n < 200) return " Seratus" + terbilang(n - 100);
+  if (n < 1000) return terbilang(Math.floor(n / 100)) + " Ratus" + terbilang(n % 100);
+  if (n < 2000) return " Seribu" + terbilang(n - 1000);
+  if (n < 1000000) return terbilang(Math.floor(n / 1000)) + " Ribu" + terbilang(n % 1000);
+  if (n < 1000000000) return terbilang(Math.floor(n / 1000000)) + " Juta" + terbilang(n % 1000000);
+  
+  return "Angka Terlalu Besar";
 };
 
-// Default Initial State
 const INITIAL_RECEIPT_STATE: Receipt = {
     id: '',
     sppdId: '',
@@ -60,30 +54,25 @@ const ReceiptManager: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Load All Master Data
   const [sppds, setSppds] = useState<SPPD[]>([]);
   const [assignments, setAssignments] = useState<AssignmentLetter[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
+  const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
   
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<Receipt | null>(null);
   const [printingReceipt, setPrintingReceipt] = useState<Receipt | null>(null);
   
-  // Delete Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
-  // Verification Confirm Modal
-  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
-  const [verifyMessage, setVerifyMessage] = useState("");
-
-  // Form State
   const [formData, setFormData] = useState<Receipt>(INITIAL_RECEIPT_STATE);
 
   const getSupabase = () => {
@@ -102,7 +91,11 @@ const ReceiptManager: React.FC = () => {
   };
 
   useEffect(() => {
-    // Load data from local storage
+    loadMasterData();
+    fetchReceipts();
+  }, []);
+
+  const loadMasterData = () => {
     try {
         setSppds(JSON.parse(localStorage.getItem('sppd_data') || '[]'));
         setAssignments(JSON.parse(localStorage.getItem('assignment_tasks_v2') || '[]'));
@@ -110,13 +103,15 @@ const ReceiptManager: React.FC = () => {
         setCities(JSON.parse(localStorage.getItem('cities') || '[]'));
         setSignatories(JSON.parse(localStorage.getItem('signatories') || '[]'));
         setFundingSources(JSON.parse(localStorage.getItem('funding_sources') || '[]'));
+        const settingsData = localStorage.getItem('agency_settings');
+        if (settingsData) setAgencySettings(JSON.parse(settingsData));
     } catch (e) {
         console.error("Error loading master data", e);
     }
-    fetchReceipts();
-  }, []);
+  };
 
   const fetchReceipts = async () => {
+    setIsLoading(true);
     const client = getSupabase();
     if(client) {
         try {
@@ -127,13 +122,13 @@ const ReceiptManager: React.FC = () => {
                     id: item.id,
                     sppdId: item.sppd_id,
                     date: item.date,
-                    dailyAllowance: item.daily_allowance,
-                    transport: item.transport,
-                    accommodation: item.accommodation,
-                    fuel: item.fuel,
-                    toll: item.toll,
-                    representation: item.representation,
-                    other: item.other,
+                    dailyAllowance: typeof item.daily_allowance === 'string' ? JSON.parse(item.daily_allowance) : item.daily_allowance,
+                    transport: typeof item.transport === 'string' ? JSON.parse(item.transport) : item.transport,
+                    accommodation: typeof item.accommodation === 'string' ? JSON.parse(item.accommodation) : item.accommodation,
+                    fuel: typeof item.fuel === 'string' ? JSON.parse(item.fuel) : item.fuel,
+                    toll: typeof item.toll === 'string' ? JSON.parse(item.toll) : item.toll,
+                    representation: typeof item.representation === 'string' ? JSON.parse(item.representation) : item.representation,
+                    other: typeof item.other === 'string' ? JSON.parse(item.other) : item.other,
                     totalAmount: Number(item.total_amount),
                     status: item.status,
                     treasurerId: item.treasurer_id,
@@ -141,6 +136,7 @@ const ReceiptManager: React.FC = () => {
                     kpaId: item.kpa_id
                 }));
                 setReceipts(mapped);
+                setIsLoading(false);
                 return;
             }
         } catch(e) { console.error(e); }
@@ -148,31 +144,24 @@ const ReceiptManager: React.FC = () => {
 
     const saved = localStorage.getItem('receipt_data_v2');
     const parsed = saved ? JSON.parse(saved) : [];
-    // SANITIZATION
     const sanitized = parsed.map((r: any) => ({
       ...INITIAL_RECEIPT_STATE,
       ...r,
-      dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...(r.dailyAllowance || {}) },
-      transport: { ...INITIAL_RECEIPT_STATE.transport, ...(r.transport || {}) },
-      accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...(r.accommodation || {}) },
-      fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...(r.fuel || {}) },
-      toll: { ...INITIAL_RECEIPT_STATE.toll, ...(r.toll || {}) },
-      representation: { ...INITIAL_RECEIPT_STATE.representation, ...(r.representation || {}) },
-      other: { ...INITIAL_RECEIPT_STATE.other, ...(r.other || {}) },
       totalAmount: Number(r.totalAmount) || 0
     }));
     setReceipts(sanitized);
+    setIsLoading(false);
   };
 
   const syncToLocalStorage = (data: Receipt[]) => {
     localStorage.setItem('receipt_data_v2', JSON.stringify(data));
   };
 
-  // Check for navigation from SPPD Manager
+  // Navigate from SPPD Manager
   useEffect(() => {
     if (location.state && location.state.createSppdId) {
+      loadMasterData();
       const sppdId = location.state.createSppdId;
-      // Check if receipt already exists
       const existing = receipts.find(r => r.sppdId === sppdId);
       if (existing) {
         handleOpenModal(existing);
@@ -181,7 +170,7 @@ const ReceiptManager: React.FC = () => {
       }
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state, receipts, sppds, assignments, navigate, location.pathname]);
+  }, [location.state, receipts]);
 
   const handleCreateFromSPPD = (sppdId: string) => {
     const sppd = sppds.find(s => s.id === sppdId);
@@ -196,12 +185,11 @@ const ReceiptManager: React.FC = () => {
     const empCount = task.employeeIds.length || 1;
 
     setEditingReceipt(null);
-    // Suggest Total: Duration * Rate * Number of People
     const total = duration * dailyRate * empCount;
 
     setFormData({
       ...INITIAL_RECEIPT_STATE,
-      id: `KW-${Date.now()}`,
+      id: `KW/${new Date().getFullYear()}/${Math.floor(Math.random() * 1000)}`,
       sppdId: sppdId,
       dailyAllowance: { 
         days: duration, 
@@ -215,6 +203,7 @@ const ReceiptManager: React.FC = () => {
   };
 
   const handleOpenModal = (receipt?: Receipt) => {
+    loadMasterData();
     if (receipt) {
       setEditingReceipt(receipt);
       setFormData({
@@ -223,18 +212,16 @@ const ReceiptManager: React.FC = () => {
         dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...receipt.dailyAllowance },
         transport: { ...INITIAL_RECEIPT_STATE.transport, ...receipt.transport },
         accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...receipt.accommodation },
-        fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...(receipt.fuel || {}) },
-        toll: { ...INITIAL_RECEIPT_STATE.toll, ...(receipt.toll || {}) },
+        fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...receipt.fuel },
+        toll: { ...INITIAL_RECEIPT_STATE.toll, ...receipt.toll },
         representation: { ...INITIAL_RECEIPT_STATE.representation, ...receipt.representation },
         other: { ...INITIAL_RECEIPT_STATE.other, ...receipt.other },
-        pptkId: receipt.pptkId || '',
-        kpaId: receipt.kpaId || ''
       });
     } else {
       setEditingReceipt(null);
       setFormData({
           ...INITIAL_RECEIPT_STATE,
-          id: `KW-${Date.now()}`
+          id: `KW/${new Date().getFullYear()}/${Math.floor(Math.random() * 1000)}`
       });
     }
     setIsModalOpen(true);
@@ -265,12 +252,9 @@ const ReceiptManager: React.FC = () => {
             updated.dailyAllowance.total = updated.dailyAllowance.days * updated.dailyAllowance.amountPerDay * count;
         }
       } else if (['transport', 'accommodation', 'fuel', 'toll', 'representation', 'other'].includes(section as string)) {
-        // @ts-ignore
-        if (!updated[section]) updated[section] = { ...INITIAL_RECEIPT_STATE[section] };
-        // @ts-ignore
+        if (!updated[section]) updated[section] = { ...INITIAL_RECEIPT_STATE[section as keyof Receipt] };
         updated[section][field] = value;
       } else {
-        // @ts-ignore
         updated[section] = value;
       }
 
@@ -281,17 +265,13 @@ const ReceiptManager: React.FC = () => {
 
   const handleSave = async (e?: React.FormEvent) => {
     if(e) e.preventDefault();
-    
-    if (!formData.sppdId) {
-        alert("Harap pilih Referensi SPPD terlebih dahulu.");
-        return;
-    }
+    if (!formData.sppdId) return alert("Pilih SPPD!");
     
     const client = getSupabase();
     const safeTotal = Number(formData.totalAmount) || 0;
     const receiptToSave = { ...formData, totalAmount: safeTotal };
 
-    // DB Payload (snake_case)
+    // DB Payload
     const dbPayload = {
         id: formData.id,
         sppd_id: formData.sppdId,
@@ -320,126 +300,14 @@ const ReceiptManager: React.FC = () => {
 
     if (client) {
         try {
-            await client.from('receipts').upsert(dbPayload);
+            const { error } = await client.from('receipts').upsert(dbPayload);
+            if(error) {
+                alert("Simpan DB Gagal: " + error.message);
+                fetchReceipts();
+            }
         } catch(e) { console.error(e); }
     }
   };
-
-  // Step 1: Request Verification (Trigger Modal)
-  const requestVerifyPayment = () => {
-    if (!formData.sppdId) {
-      alert("SPPD belum dipilih!");
-      return;
-    }
-
-    const safeTotal = Number(formData.totalAmount) || 0;
-    const sppd = sppds.find(s => s.id === formData.sppdId);
-    
-    if (!sppd) {
-      alert("Data SPPD tidak ditemukan!");
-      return;
-    }
-
-    if (!sppd.fundingId) {
-      alert("SPPD ini belum memiliki Sumber Dana. Mohon edit data SPPD terlebih dahulu.");
-      return;
-    }
-
-    const source = fundingSources.find(f => f.id === sppd.fundingId);
-    if (!source) {
-       alert("Sumber dana tidak ditemukan!");
-       return;
-    }
-
-    if (safeTotal > 0 && source.amount < safeTotal) {
-      alert(`Saldo anggaran tidak mencukupi! \nSisa Anggaran: Rp ${source.amount.toLocaleString()} \nDibutuhkan: Rp ${safeTotal.toLocaleString()}`);
-      return;
-    }
-
-    const msg = safeTotal > 0 
-        ? `Konfirmasi Pembayaran:\n\nTotal: Rp ${safeTotal.toLocaleString()}\nSumber Dana: ${source.name}\n\nSaldo akan dikurangi secara otomatis. Lanjutkan?`
-        : `Konfirmasi Verifikasi:\n\nTotal Biaya: Rp 0\nStatus akan diubah menjadi Selesai. Lanjutkan?`;
-    
-    setVerifyMessage(msg);
-    setIsVerifyModalOpen(true);
-  };
-
-  // Step 2: Confirm Verification (Execute Action)
-  const confirmVerifyPayment = async () => {
-    const client = getSupabase();
-    const safeTotal = Number(formData.totalAmount) || 0;
-    const sppd = sppds.find(s => s.id === formData.sppdId);
-    const source = fundingSources.find(f => f.id === sppd?.fundingId);
-
-    // 1. Update Funding (Local)
-    if (source && safeTotal > 0) {
-        const updatedSources = fundingSources.map(s => 
-          s.id === source.id ? { ...s, amount: s.amount - safeTotal } : s
-        );
-        setFundingSources(updatedSources);
-        localStorage.setItem('funding_sources', JSON.stringify(updatedSources));
-        
-        // Update DB Funding
-        if(client) {
-            await client.from('funding_sources').update({ amount: source.amount - safeTotal }).eq('id', source.id);
-        }
-    }
-
-    // 2. Update SPPD Status (Local)
-    if (sppd) {
-        const updatedSppds = sppds.map(s => 
-          s.id === sppd.id ? { ...s, status: 'Selesai' as const } : s
-        );
-        setSppds(updatedSppds);
-        localStorage.setItem('sppd_data', JSON.stringify(updatedSppds));
-        
-        // Update DB SPPD
-        if(client) {
-            await client.from('sppds').update({ status: 'Selesai' }).eq('id', sppd.id);
-        }
-    }
-
-    // 3. Update Receipt
-    const paidReceipt: Receipt = { 
-        ...formData, 
-        totalAmount: safeTotal,
-        status: 'Paid' 
-    };
-    
-    // DB Payload for Receipt
-    const dbPayload = {
-        id: formData.id,
-        sppd_id: formData.sppdId,
-        date: formData.date,
-        daily_allowance: formData.dailyAllowance,
-        transport: formData.transport,
-        accommodation: formData.accommodation,
-        fuel: formData.fuel,
-        toll: formData.toll,
-        representation: formData.representation,
-        other: formData.other,
-        total_amount: safeTotal,
-        status: 'Paid',
-        treasurer_id: formData.treasurerId,
-        pptk_id: formData.pptkId,
-        kpa_id: formData.kpaId
-    };
-
-    if (editingReceipt) {
-      setReceipts(prev => prev.map(r => r.id === editingReceipt.id ? paidReceipt : r));
-    } else {
-      setReceipts(prev => [...prev, paidReceipt]);
-    }
-    syncToLocalStorage(editingReceipt ? receipts.map(r => r.id === editingReceipt.id ? paidReceipt : r) : [...receipts, paidReceipt]);
-
-    // Update DB Receipt
-    if(client) {
-        await client.from('receipts').upsert(dbPayload);
-    }
-
-    setIsModalOpen(false);
-  };
-
 
   const requestDelete = (id: string) => {
     setItemToDelete(id);
@@ -462,50 +330,53 @@ const ReceiptManager: React.FC = () => {
     }
   };
 
-  const handlePrint = (receipt: Receipt) => {
-    setPrintingReceipt(receipt);
-    setIsPrintModalOpen(true);
+  const handlePrint = (receipt?: Receipt) => {
+      loadMasterData(); // Ensure fresh settings
+      if(receipt) {
+          setPrintingReceipt(receipt);
+          setIsPrintModalOpen(true);
+      } else {
+          window.print();
+      }
   };
 
-  // ... (renderMoneyInput and getReceiptDetails remain unchanged)
-  const renderMoneyInput = (section: keyof Receipt, label: string) => {
-    // Cast to any to safely access properties that might not exist on all Receipt keys
-    const item = (formData[section] as any) || { amount: 0, description: '', visible: false };
+  const getReceiptDetails = (receipt: Receipt) => {
+    const sppd = sppds.find(s => s.id === receipt.sppdId);
+    const task = assignments.find(a => a.id === sppd?.assignmentId);
+    const emp = employees.find(e => e.id === task?.employeeIds[0]);
+    const city = cities.find(c => c.id === task?.destinationId);
+    const funding = fundingSources.find(f => f.id === sppd?.fundingId);
+    
+    return {
+        sppdNumber: sppd?.id || '-',
+        taskSubject: task?.subject || '-',
+        empName: emp?.name || '-',
+        empNip: emp?.nip || '-',
+        destination: city?.name || '-',
+        fundingName: funding?.name || '-'
+    };
+  };
 
+  const renderMoneyInput = (section: keyof Receipt, label: string) => {
+    const item = (formData[section] as any) || { amount: 0, description: '', visible: false };
     return (
       <div className={`p-4 border rounded-xl transition-all ${item.visible ? 'bg-white border-indigo-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
-            <input 
-              type="checkbox" 
-              checked={!!item.visible} 
-              onChange={(e) => handleFormChange(section, 'visible', e.target.checked)}
-              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-            />
+            <input type="checkbox" checked={!!item.visible} onChange={(e) => handleFormChange(section, 'visible', e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
             <label className="font-semibold text-slate-700">{label}</label>
           </div>
         </div>
-        
         {item.visible && (
           <div className="space-y-3 pl-6">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Nominal (Rp)</label>
-              <input 
-                type="number" 
-                value={item.amount || 0} 
-                onChange={(e) => handleFormChange(section, 'amount', Number(e.target.value))}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none" 
-              />
+              <input type="number" value={item.amount || 0} onChange={(e) => handleFormChange(section, 'amount', Number(e.target.value))} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm" />
             </div>
             {section !== 'representation' && (
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Keterangan / Rincian</label>
-                <input 
-                  type="text" 
-                  value={item.description || ''} 
-                  onChange={(e) => handleFormChange(section, 'description', e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-black focus:ring-2 focus:ring-indigo-500 outline-none" 
-                />
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keterangan</label>
+                <input type="text" value={item.description || ''} onChange={(e) => handleFormChange(section, 'description', e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm" />
               </div>
             )}
           </div>
@@ -514,605 +385,207 @@ const ReceiptManager: React.FC = () => {
     );
   };
 
-  const getReceiptDetails = (receipt: Receipt) => {
-    const sppd = sppds.find(s => s.id === receipt.sppdId);
-    const task = assignments.find(a => a.id === sppd?.assignmentId);
-    const emp = employees.find(e => e.id === task?.employeeIds[0]);
-    
-    const treasurer = signatories.find(s => s.id === receipt.treasurerId);
-    const treasurerEmp = employees.find(e => e.id === treasurer?.employeeId);
-    
-    const pptk = signatories.find(s => s.id === receipt.pptkId);
-    const pptkEmp = employees.find(e => e.id === pptk?.employeeId);
-    
-    const kpa = signatories.find(s => s.id === receipt.kpaId);
-    const kpaEmp = employees.find(e => e.id === kpa?.employeeId);
-
-    return { sppd, task, emp, treasurer, treasurerEmp, pptk, pptkEmp, kpa, kpaEmp };
-  };
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Kwitansi & Rincian Biaya</h1>
-          <p className="text-slate-500">Kelola bukti pembayaran dan rincian biaya perjalanan dinas.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Kwitansi & Pembayaran</h1>
+          <p className="text-slate-500">Kelola rincian biaya perjalanan dinas.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)} 
-          className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md"
-        >
-          <Plus size={18} />
-          <span className="font-medium text-sm">Buat Manual</span>
-        </button>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchReceipts} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            <button onClick={() => handleOpenModal()} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
+                <Plus size={18} /><span>Buat Kwitansi</span>
+            </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {receipts.map((r) => {
-          const { emp } = getReceiptDetails(r);
-          const isPaid = r.status === 'Paid';
-          
-          return (
-            <div key={r.id} className={`bg-white p-6 rounded-2xl border shadow-sm flex flex-col justify-between hover:shadow-md transition-all ${isPaid ? 'border-emerald-200 bg-emerald-50/20' : ''}`}>
-              <div>
-                <div className="flex justify-between items-start mb-4">
-                   <div className={`p-3 rounded-xl ${isPaid ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                      <ReceiptIcon size={24} />
-                   </div>
-                   <span className={`px-2 py-1 text-[10px] font-bold rounded-md uppercase tracking-wider ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                     {r.status === 'Paid' ? 'Lunas / Selesai' : r.status}
-                   </span>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print:hidden">
+        {receipts.map(r => {
+            const details = getReceiptDetails(r);
+            return (
+                <div key={r.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-all relative">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                            <ReceiptIcon size={24} />
+                        </div>
+                        <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${r.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {r.status === 'Paid' ? 'Lunas' : 'Draft'}
+                        </span>
+                    </div>
+                    <h3 className="font-bold text-lg text-slate-900">{r.id}</h3>
+                    <p className="text-xs text-slate-400 mb-4">{r.date}</p>
+                    <div className="space-y-2 text-sm text-slate-600 mb-6">
+                        <p><span className="font-semibold">Pegawai:</span> {details.empName}</p>
+                        <p><span className="font-semibold">Tujuan:</span> {details.destination}</p>
+                        <p><span className="font-semibold">Ref SPPD:</span> {details.sppdNumber}</p>
+                    </div>
+                    <div className="pt-4 border-t flex items-center justify-between">
+                        <p className="text-lg font-bold text-indigo-600">Rp {r.totalAmount.toLocaleString('id-ID')}</p>
+                        <div className="flex space-x-1">
+                            <button onClick={() => handlePrint(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded"><Printer size={16}/></button>
+                            <button onClick={() => handleOpenModal(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
+                            <button onClick={() => requestDelete(r.id)} className="p-2 text-slate-400 hover:text-rose-600 rounded"><Trash2 size={16}/></button>
+                        </div>
+                    </div>
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">Rp {Number(r.totalAmount).toLocaleString('id-ID') || '0'}</h3>
-                <p className="text-xs text-slate-500 mb-4">{terbilang(Number(r.totalAmount) || 0)} Rupiah</p>
-                
-                <div className="space-y-2 text-sm text-slate-600 border-t pt-4">
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">Pegawai:</span>
-                     <span className="font-medium">{emp?.name || '-'}</span>
-                   </div>
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">SPPD:</span>
-                     <span className="font-mono text-xs bg-slate-100 px-1 rounded">{r.sppdId}</span>
-                   </div>
-                   <div className="flex justify-between">
-                     <span className="text-slate-400">Tanggal:</span>
-                     <span>{r.date}</span>
-                   </div>
-                </div>
-              </div>
-              <div className="flex mt-6 space-x-2">
-                 <button onClick={() => handlePrint(r)} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 flex items-center justify-center space-x-2">
-                    <Printer size={16} /> <span>Cetak</span>
-                 </button>
-                 {!isPaid && (
-                   <button onClick={() => handleOpenModal(r)} className="p-2 text-slate-400 hover:text-indigo-600 border rounded-lg"><Edit2 size={18} /></button>
-                 )}
-                 <button onClick={() => requestDelete(r.id)} className="p-2 text-slate-400 hover:text-rose-600 border rounded-lg"><Trash2 size={18} /></button>
-              </div>
-            </div>
-          );
+            );
         })}
-         {receipts.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl">
-            <ReceiptIcon className="mx-auto text-slate-300 mb-4" size={48} />
-            <p className="text-slate-500 font-medium">Belum ada data kwitansi.</p>
-            <p className="text-xs text-slate-400 mt-1">Buat kwitansi dari menu SPPD (Klik icon $).</p>
-          </div>
+        {receipts.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">Belum ada data kwitansi.</div>
         )}
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b flex justify-between items-center bg-slate-50">
+              <h3 className="text-xl font-bold text-slate-900">{editingReceipt ? 'Edit' : 'Buat'} Kwitansi</h3>
+              <button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Nomor Kwitansi</label>
+                        <input type="text" value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Referensi SPPD</label>
+                        <select value={formData.sppdId} onChange={(e) => setFormData({...formData, sppdId: e.target.value})} className="w-full px-4 py-2 border rounded-xl">
+                            <option value="">-- Pilih SPPD --</option>
+                            {sppds.map(s => <option key={s.id} value={s.id}>{s.id} - {assignments.find(a => a.id === s.assignmentId)?.subject}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="p-4 border border-indigo-200 bg-indigo-50/50 rounded-xl">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="font-semibold text-indigo-900">Uang Harian</label>
+                            <input type="checkbox" checked={formData.dailyAllowance.visible} onChange={(e) => handleFormChange('dailyAllowance', 'visible', e.target.checked)} className="w-4 h-4 text-indigo-600 rounded"/>
+                        </div>
+                        {formData.dailyAllowance.visible && (
+                            <div className="space-y-2 text-sm">
+                                <div className="flex justify-between"><span>Hari:</span><input type="number" value={formData.dailyAllowance.days} onChange={(e) => handleFormChange('dailyAllowance', 'days', Number(e.target.value))} className="w-16 p-1 border rounded" /></div>
+                                <div className="flex justify-between"><span>Rate:</span><input type="number" value={formData.dailyAllowance.amountPerDay} onChange={(e) => handleFormChange('dailyAllowance', 'amountPerDay', Number(e.target.value))} className="w-24 p-1 border rounded" /></div>
+                                <div className="font-bold text-right border-t pt-1">Total: Rp {formData.dailyAllowance.total.toLocaleString()}</div>
+                            </div>
+                        )}
+                    </div>
+                    {renderMoneyInput('transport', 'Biaya Transportasi')}
+                    {renderMoneyInput('accommodation', 'Biaya Penginapan')}
+                    {renderMoneyInput('fuel', 'BBM')}
+                    {renderMoneyInput('toll', 'Tol')}
+                    {renderMoneyInput('representation', 'Uang Representasi')}
+                    {renderMoneyInput('other', 'Lain-lain')}
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border">
+                    <h4 className="font-bold text-sm text-slate-700 mb-3">Tanda Tangan</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <select value={formData.treasurerId} onChange={(e) => setFormData({...formData, treasurerId: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">-- Bendahara --</option>{signatories.map(s => <option key={s.id} value={s.id}>{s.role}</option>)}</select>
+                        <select value={formData.pptkId} onChange={(e) => setFormData({...formData, pptkId: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">-- PPTK --</option>{signatories.map(s => <option key={s.id} value={s.id}>{s.role}</option>)}</select>
+                        <select value={formData.kpaId} onChange={(e) => setFormData({...formData, kpaId: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm"><option value="">-- KPA --</option>{signatories.map(s => <option key={s.id} value={s.id}>{s.role}</option>)}</select>
+                    </div>
+                </div>
+            </div>
+            <div className="p-6 border-t bg-white flex justify-between items-center">
+                <div className="text-lg font-bold text-slate-900">Total: Rp {formData.totalAmount.toLocaleString('id-ID')}</div>
+                <div className="flex space-x-2">
+                    <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-slate-100 rounded-lg font-bold">Batal</button>
+                    <button onClick={() => handleSave()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold">Simpan</button>
+                </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPrintModalOpen && printingReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
+            <div className="bg-white w-full max-w-[210mm] max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl">
+                <div className="p-4 border-b flex justify-between print:hidden sticky top-0 bg-white z-10">
+                    <h3 className="font-bold">Cetak Kwitansi</h3>
+                    <div className="flex space-x-2">
+                        <button onClick={() => window.print()} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm font-bold flex items-center"><Printer size={16} className="mr-1"/> Print</button>
+                        <button onClick={() => setIsPrintModalOpen(false)} className="px-3 py-1 bg-slate-200 rounded text-sm font-bold">Tutup</button>
+                    </div>
+                </div>
+                <div id="print-area" className="p-8 text-black font-serif text-sm bg-white">
+                    {/* Header */}
+                    <div className="flex items-center border-b-[3px] border-black pb-2 mb-4">
+                        <img src={agencySettings.logoUrl} className="h-16 w-auto mr-4" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
+                        <div className="text-center flex-1">
+                            <h2 className="font-bold text-lg uppercase">{agencySettings.name}</h2>
+                            <h3 className="font-bold text-xl uppercase">{agencySettings.department}</h3>
+                            <p className="text-xs">{agencySettings.address}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="text-center mb-6">
+                        <h2 className="font-bold text-lg underline uppercase">KWITANSI</h2>
+                        <p>Nomor: {printingReceipt.id}</p>
+                    </div>
+
+                    <div className="space-y-4 mb-8">
+                        <div className="flex">
+                            <div className="w-48">Sudah terima dari</div>
+                            <div>: Bendahara Pengeluaran {agencySettings.department}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-48">Banyaknya Uang</div>
+                            <div className="flex-1 bg-slate-100 p-2 font-bold italic border border-slate-300">
+                                {terbilang(printingReceipt.totalAmount)} Rupiah
+                            </div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-48">Untuk Pembayaran</div>
+                            <div className="flex-1">
+                                {(() => {
+                                    const details = getReceiptDetails(printingReceipt);
+                                    return `Biaya perjalanan dinas a.n. ${details.empName} ke ${details.destination} sesuai SPPD Nomor ${details.sppdNumber}`;
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mb-8 p-4 border-2 border-black font-bold text-xl w-fit">
+                        Terbilang Rp. {printingReceipt.totalAmount.toLocaleString('id-ID')}
+                    </div>
+
+                    <div className="flex justify-between mt-12 text-center">
+                        <div className="w-1/3">
+                            <p className="mb-20">Lunas dibayar,<br/>Bendahara Pengeluaran</p>
+                            <p className="font-bold underline">{employees.find(e => e.id === signatories.find(s => s.id === printingReceipt.treasurerId)?.employeeId)?.name || '.........................'}</p>
+                            <p>NIP. {employees.find(e => e.id === signatories.find(s => s.id === printingReceipt.treasurerId)?.employeeId)?.nip || '.........................'}</p>
+                        </div>
+                        <div className="w-1/3">
+                            <p className="mb-20">Demak, {new Date(printingReceipt.date).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}<br/>Yang Menerima</p>
+                            <p className="font-bold underline">{getReceiptDetails(printingReceipt).empName}</p>
+                            <p>NIP. {getReceiptDetails(printingReceipt).empNip}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-8 text-center w-1/3 mx-auto">
+                        <p className="mb-20">Setuju dibayar,<br/>Kuasa Pengguna Anggaran</p>
+                        <p className="font-bold underline">{employees.find(e => e.id === signatories.find(s => s.id === printingReceipt.kpaId)?.employeeId)?.name || '.........................'}</p>
+                        <p>NIP. {employees.find(e => e.id === signatories.find(s => s.id === printingReceipt.kpaId)?.employeeId)?.nip || '.........................'}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
 
       <ConfirmationModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={confirmDelete}
         title="Hapus Kwitansi"
-        message="Apakah Anda yakin ingin menghapus kwitansi ini?"
+        message="Apakah Anda yakin ingin menghapus data ini?"
         confirmText="Ya, Hapus"
         isDanger={true}
       />
-
-      <ConfirmationModal
-        isOpen={isVerifyModalOpen}
-        onClose={() => setIsVerifyModalOpen(false)}
-        onConfirm={confirmVerifyPayment}
-        title="Konfirmasi Pembayaran"
-        message={verifyMessage}
-        confirmText="Proses Bayar"
-        isDanger={false}
-      />
-
-      {/* INPUT MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-hidden">
-          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b flex justify-between items-center bg-slate-50 rounded-t-2xl">
-              <h3 className="text-xl font-bold text-slate-900">Rincian Biaya Perjalanan</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                     <label className="block text-sm font-semibold text-slate-700 mb-1">Nomor Kwitansi</label>
-                     <input type="text" readOnly value={formData.id} className="w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 text-sm" />
-                  </div>
-                  <div>
-                     <label className="block text-sm font-semibold text-slate-700 mb-1">Tanggal Kwitansi</label>
-                     <input type="date" value={formData.date} onChange={(e) => handleFormChange('date', '', e.target.value)} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-black text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                  <div className="md:col-span-2">
-                     <label className="block text-sm font-semibold text-slate-700 mb-1">Referensi SPPD</label>
-                     <select value={formData.sppdId} disabled={!!editingReceipt} onChange={(e) => handleCreateFromSPPD(e.target.value)} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-black text-sm outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="">-- Pilih SPPD --</option>
-                        {sppds.map(s => (
-                           <option key={s.id} value={s.id}>{s.id} - {assignments.find(a => a.id === s.assignmentId)?.subject}</option>
-                        ))}
-                     </select>
-                  </div>
-               </div>
-
-               <div className="border-t pt-4">
-                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wider mb-4">Komponen Biaya</h4>
-                  <div className="space-y-4">
-                     {/* 1. Uang Harian */}
-                     <div className="p-4 border border-indigo-200 bg-indigo-50/50 rounded-xl">
-                        <div className="flex items-center justify-between mb-3">
-                           <div className="flex items-center space-x-2">
-                              <Check size={18} className="text-indigo-600" />
-                              <label className="font-semibold text-slate-700">Uang Harian (Otomatis)</label>
-                           </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 pl-6">
-                           <div>
-                              <label className="block text-xs font-medium text-slate-500 mb-1">Hari</label>
-                              <input type="number" value={formData.dailyAllowance?.days || 0} onChange={(e) => handleFormChange('dailyAllowance', 'days', Number(e.target.value))} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-black outline-none focus:ring-2 focus:ring-indigo-500" />
-                           </div>
-                           <div className="col-span-2">
-                              <label className="block text-xs font-medium text-slate-500 mb-1">Nominal per Hari</label>
-                              <input type="number" value={formData.dailyAllowance?.amountPerDay || 0} onChange={(e) => handleFormChange('dailyAllowance', 'amountPerDay', Number(e.target.value))} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-black outline-none focus:ring-2 focus:ring-indigo-500" />
-                           </div>
-                        </div>
-                        <div className="text-right mt-2 text-sm font-bold text-indigo-700">
-                           Total: Rp {(formData.dailyAllowance?.total || 0).toLocaleString()}
-                        </div>
-                     </div>
-
-                     {/* 2. Transport */}
-                     {renderMoneyInput('transport', 'Biaya Transport')}
-
-                     {/* 3. BBM */}
-                     {renderMoneyInput('fuel', 'Biaya BBM')}
-
-                     {/* 4. Tol */}
-                     {renderMoneyInput('toll', 'Biaya Tol')}
-                     
-                     {/* 5. Penginapan */}
-                     {renderMoneyInput('accommodation', 'Biaya Penginapan')}
-                     
-                     {/* 6. Representasi */}
-                     {renderMoneyInput('representation', 'Uang Representasi')}
-                     
-                     {/* 7. Lain-lain */}
-                     {renderMoneyInput('other', 'Lain-lain')}
-                  </div>
-               </div>
-
-               <div className="border-t pt-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Bendahara Pengeluaran</label>
-                    <select 
-                       value={formData.treasurerId} 
-                       onChange={(e) => handleFormChange('treasurerId', '', e.target.value)} 
-                       className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-black text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                       <option value="">-- Pilih Bendahara --</option>
-                       {signatories.map(s => {
-                          const emp = employees.find(e => e.id === s.employeeId);
-                          return <option key={s.id} value={s.id}>{s.role} - {emp?.name}</option>;
-                       })}
-                    </select>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Kuasa Pengguna Anggaran (KPA)</label>
-                        <select 
-                           value={formData.kpaId} 
-                           onChange={(e) => handleFormChange('kpaId', '', e.target.value)} 
-                           className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-black text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                           <option value="">-- Pilih KPA / PA --</option>
-                           {signatories.map(s => {
-                              const emp = employees.find(e => e.id === s.employeeId);
-                              return <option key={s.id} value={s.id}>{s.role} - {emp?.name}</option>;
-                           })}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">PPTK</label>
-                        <select 
-                           value={formData.pptkId} 
-                           onChange={(e) => handleFormChange('pptkId', '', e.target.value)} 
-                           className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-black text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                           <option value="">-- Pilih PPTK --</option>
-                           {signatories.map(s => {
-                              const emp = employees.find(e => e.id === s.employeeId);
-                              return <option key={s.id} value={s.id}>{s.role} - {emp?.name}</option>;
-                           })}
-                        </select>
-                      </div>
-                  </div>
-               </div>
-            </div>
-
-            <div className="p-6 border-t bg-slate-50 rounded-b-2xl flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-               <div>
-                  <p className="text-xs text-slate-500 uppercase font-bold">Total Biaya</p>
-                  <p className="text-2xl font-black text-slate-900">Rp {Number(formData.totalAmount).toLocaleString()}</p>
-               </div>
-               <div className="flex space-x-3 w-full md:w-auto">
-                  {formData.status !== 'Paid' ? (
-                    <>
-                       <button type="button" onClick={() => handleSave()} className="flex-1 px-4 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-xl hover:bg-slate-50">Simpan Draft</button>
-                       <button type="button" onClick={requestVerifyPayment} className="flex-1 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 flex items-center justify-center space-x-2">
-                         <Check size={18} />
-                         <span>Bayar & Verifikasi</span>
-                       </button>
-                    </>
-                  ) : (
-                    <div className="px-6 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-xl flex items-center">
-                       <Check size={20} className="mr-2"/> Terbayar
-                    </div>
-                  )}
-               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PRINT PREVIEW */}
-      {isPrintModalOpen && printingReceipt && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[210mm] shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 print:shadow-none print:m-0 print:w-full print:max-h-none print:h-auto">
-               <div className="p-4 border-b flex justify-between items-center bg-white rounded-t-2xl flex-shrink-0 print:hidden">
-                  <h3 className="text-lg font-bold text-slate-900">Cetak Kwitansi</h3>
-                  <div className="flex space-x-2">
-                     <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm hover:bg-indigo-700 flex items-center space-x-2"><Printer size={16} /><span>Cetak</span></button>
-                     <button onClick={() => setIsPrintModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
-                  </div>
-               </div>
-               
-               <div className="overflow-y-auto flex-1 custom-scrollbar">
-                  <div id="print-area" className="p-[25mm] bg-white text-black leading-tight text-sm" style={{ fontFamily: 'Times New Roman, serif', color: '#000000' }}>
-                     
-                     {(() => {
-                        const { sppd, task, emp, treasurer, treasurerEmp, kpa, kpaEmp, pptk, pptkEmp } = getReceiptDetails(printingReceipt);
-                        const r = printingReceipt;
-                        const employeeCount = task?.employeeIds.length || 0;
-                        const isMoreThanFour = employeeCount > 4;
-                        const isMultiPersonFormatC = employeeCount > 1 && employeeCount <= 4;
-                        let itemNo = 1;
-
-                        const renderRow = (label: string, amount: number) => (
-                           <tr>
-                              <td className="border border-black p-1 text-center w-8">{itemNo++}.</td>
-                              <td className="border border-black p-1">{label}</td>
-                              <td className="border border-black p-1 w-32 border-r-0">Rp</td>
-                              <td className="border border-black p-1 w-32 border-l-0 text-right">{Number(amount).toLocaleString('id-ID')}</td>
-                              <td className="border border-black p-1"></td>
-                           </tr>
-                        );
-                        
-                        const renderRowFormatD = (label: string, amount: number, attachmentNote = "") => (
-                           <tr>
-                              <td className="border border-black p-1 text-center w-8">{itemNo++}.</td>
-                              <td className="border border-black p-1">{label}</td>
-                              <td className="border border-black p-1 w-32 border-r-0">Rp</td>
-                              <td className="border border-black p-1 w-32 border-l-0 text-right">{Number(amount).toLocaleString('id-ID')}</td>
-                              <td className="border border-black p-1 text-center">{attachmentNote}</td>
-                           </tr>
-                        );
-
-                        // Calculation for Recap (Format F) - Distribute Costs
-                        const perPersonDaily = r.dailyAllowance.visible ? (r.dailyAllowance.total / employeeCount) : 0;
-                        const totalTransport = (r.transport?.visible ? r.transport.amount : 0) + (r.fuel?.visible ? r.fuel.amount : 0) + (r.toll?.visible ? r.toll.amount : 0);
-                        const perPersonTransport = totalTransport / employeeCount;
-                        const perPersonHotel = r.accommodation.visible ? (r.accommodation.amount / employeeCount) : 0;
-                        const perPersonRep = r.representation.visible ? (r.representation.amount / employeeCount) : 0;
-                        const perPersonOther = r.other.visible ? (r.other.amount / employeeCount) : 0;
-                        
-                        // Recalculate per person total to handle rounding differences, though simplistic
-                        const perPersonTotal = perPersonDaily + perPersonTransport + perPersonHotel + perPersonRep + perPersonOther;
-
-                        return (
-                           <div className="text-black" style={{ color: '#000000' }}>
-                              
-                              {/* --- FORMAT UTAMA (COVER) --- */}
-
-                              {/* LOGIC UNTUK FORMAT HEADER */}
-                              {isMoreThanFour ? (
-                                <div className="font-bold mb-6 text-justify uppercase" style={{ fontSize: '11pt' }}>
-                                   D. RINCIAN BIAYA PERJALANAN DINAS LEBIH DARI 4 (EMPAT) ORANG SELAIN PIMPINAN DAN ANGGOTA DPRD
-                                </div>
-                              ) : (
-                                 <div className="mb-6"></div> 
-                              )}
-                              
-                              <div className="mb-4">
-                                 <table className="w-full">
-                                    <tbody>
-                                       <tr><td className="w-48">Lampiran SPPD Nomor</td><td>: {sppd?.id}</td></tr>
-                                       <tr><td>Tanggal</td><td>: {new Date(r.date).toLocaleDateString('id-ID', {day: '2-digit', month: 'long', year: 'numeric'})}</td></tr>
-                                    </tbody>
-                                 </table>
-                              </div>
-
-                              <table className="w-full border-collapse border border-black mb-1 text-black" style={{ color: '#000000' }}>
-                                 <thead className="text-center font-bold">
-                                    <tr>
-                                       <th className="border border-black p-1 w-10">No.</th>
-                                       <th className="border border-black p-1">PERINCIAN BIAYA</th>
-                                       <th className="border border-black p-1 w-40">JUMLAH</th>
-                                       <th className="border border-black p-1 w-32">KETERANGAN</th>
-                                    </tr>
-                                 </thead>
-                                 <tbody>
-                                    {isMoreThanFour ? (
-                                       // ---- FORMAT D (> 4 Orang) ----
-                                       <>
-                                         {r.dailyAllowance.visible && renderRowFormatD(`Uang Harian*`, r.dailyAllowance.total, "Terlampir")}
-                                         
-                                         {totalTransport > 0 && renderRowFormatD('Biaya Transport*', totalTransport, "Terlampir")}
-
-                                         {r.accommodation.visible && renderRowFormatD('Biaya Penginapan*', r.accommodation.amount, "Terlampir")}
-                                         {r.representation.visible && renderRowFormatD('Uang Representasi*', r.representation.amount, "Terlampir")}
-                                         {r.other.visible && renderRowFormatD('Lain-lain*', r.other.amount, "Terlampir")}
-                                       </>
-                                    ) : (
-                                       // ---- FORMAT C (<= 4 Orang) - EXISTING ----
-                                       <>
-                                          {r.dailyAllowance.visible && (
-                                             <tr>
-                                                <td className="border border-black p-1 text-center">{itemNo++}.</td>
-                                                <td className="border border-black p-1">
-                                                   Uang Harian {employeeCount > 1 ? `${employeeCount} Orang x ` : ''}{r.dailyAllowance.days} hari x Rp {Number(r.dailyAllowance.amountPerDay).toLocaleString('id-ID')}
-                                                </td>
-                                                <td className="border border-black p-1 border-r-0">Rp</td>
-                                                <td className="border border-black p-1 border-l-0 text-right">{Number(r.dailyAllowance.total).toLocaleString('id-ID')}</td>
-                                                <td className="border border-black p-1"></td>
-                                             </tr>
-                                          )}
-                                          
-                                          {r.transport.visible && renderRow(r.transport.description || 'Biaya Transport', r.transport.amount)}
-                                          {r.fuel?.visible && renderRow(r.fuel.description || 'Biaya BBM', r.fuel.amount)}
-                                          {r.toll?.visible && renderRow(r.toll.description || 'Biaya Tol', r.toll.amount)}
-                                          {r.accommodation.visible && renderRow(r.accommodation.description || 'Biaya Penginapan', r.accommodation.amount)}
-                                          {r.representation.visible && renderRow('Uang Representasi', r.representation.amount)}
-                                          {r.other.visible && renderRow(r.other.description || 'Lain-lain', r.other.amount)}
-                                       </>
-                                    )}
-                                    
-                                    <tr className="font-bold">
-                                       <td className="border border-black p-1 text-center"></td>
-                                       <td className="border border-black p-1">JUMLAH</td>
-                                       <td className="border border-black p-1 border-r-0">Rp</td>
-                                       <td className="border border-black p-1 border-l-0 text-right">{Number(r.totalAmount).toLocaleString('id-ID')}</td>
-                                       <td className="border border-black p-1"></td>
-                                    </tr>
-                                    <tr>
-                                       <td className="border border-black p-1 font-bold" colSpan={4}>
-                                          Terbilang: <span className="italic font-normal">{terbilang(Number(r.totalAmount))} Rupiah</span>
-                                       </td>
-                                    </tr>
-                                 </tbody>
-                              </table>
-                              
-                              {isMoreThanFour && (
-                                <div className="text-sm mb-4">*Catatan : Jumlah merupakan total dari lampiran</div>
-                              )}
-
-                              {/* Middle Section (Treasurer & Recipient) */}
-                              <div className="flex justify-between mt-4 text-black" style={{ color: '#000000' }}>
-                                 <div className="w-[45%]">
-                                    <div className="mb-4 text-white">.</div> {/* Spacer */}
-                                    <p>Telah dibayar sejumlah</p>
-                                    <p>Rp. {Number(r.totalAmount).toLocaleString('id-ID')}</p>
-                                    <p className="mt-4 font-bold">Bendahara Pengeluaran</p>
-                                    <br/><br/><br/>
-                                    <p className="font-bold underline">{treasurerEmp?.name || '(................................)'}</p>
-                                    <p>Pangkat: {treasurerEmp?.grade || '-'}</p>
-                                    <p>NIP. {treasurerEmp?.nip || '.......................'}</p>
-                                 </div>
-                                 <div className="w-[45%]">
-                                    <p className="text-right mb-4">..........., {new Date(r.date).toLocaleDateString('id-ID', {day: '2-digit', month: 'long', year: 'numeric'})}</p>
-                                    <p>Telah menerima jumlah uang sebesar</p>
-                                    <p>Rp. {Number(r.totalAmount).toLocaleString('id-ID')}</p>
-                                    <p className="mt-4 font-bold">Yang Menerima</p>
-                                    
-                                    {/* SIGNATURE LOGIC FOR FORMAT C */}
-                                    {isMoreThanFour ? (
-                                       <>
-                                         <br/><br/><br/>
-                                         <p className="font-bold underline">(Terlampir)</p>
-                                         <p>Pangkat: -</p>
-                                         <p>NIP. -</p>
-                                       </>
-                                    ) : (
-                                       // FORMAT C: Handle 1-4 People
-                                       employeeCount > 1 ? (
-                                         <table className="w-full text-xs mt-4">
-                                            <tbody>
-                                               {task?.employeeIds.map((eid, idx) => {
-                                                  const e = employees.find(em => em.id === eid);
-                                                  return (
-                                                     <tr key={eid}>
-                                                       <td className="align-bottom pb-6 w-5">{idx + 1}.</td>
-                                                       <td className="align-bottom pb-6">
-                                                          <span className="font-bold">{e?.name}</span><br/>
-                                                          NIP. {e?.nip}
-                                                       </td>
-                                                       <td className="align-bottom pb-6 text-right font-bold tracking-widest">.............</td>
-                                                     </tr>
-                                                  );
-                                               })}
-                                            </tbody>
-                                         </table>
-                                       ) : (
-                                         // 1 Person Standard
-                                         <>
-                                            <br/><br/><br/>
-                                            <p className="font-bold underline">{emp?.name}</p>
-                                            <p>Pangkat: {emp?.grade || '-'}</p>
-                                            <p>NIP. {emp?.nip}</p>
-                                         </>
-                                       )
-                                    )}
-                                 </div>
-                              </div>
-
-                              <div className="border-t border-black my-6"></div>
-                              
-                              <div className="text-center font-bold mb-2">PERHITUNGAN SPPD RAMPUNG</div>
-                              <div className="mb-6 w-3/4 mx-auto text-black" style={{ color: '#000000' }}>
-                                 <table className="w-full">
-                                    <tbody>
-                                       <tr>
-                                          <td>Ditetapkan sejumlah</td>
-                                          <td>: Rp {Number(r.totalAmount).toLocaleString('id-ID')}</td>
-                                       </tr>
-                                       <tr>
-                                          <td>Yang telah dibayar semula</td>
-                                          <td>: Rp 0</td>
-                                       </tr>
-                                       <tr>
-                                          <td>Sisa kurang / lebih</td>
-                                          <td>: Rp {Number(r.totalAmount).toLocaleString('id-ID')}</td>
-                                       </tr>
-                                    </tbody>
-                                 </table>
-                              </div>
-
-                              <div className="text-center font-bold mb-4">MENGETAHUI</div>
-                              
-                              {/* Bottom Section (KPA & PPTK) */}
-                              <div className="flex justify-between text-black" style={{ color: '#000000' }}>
-                                 <div className="w-[45%] text-center">
-                                    <p className="mb-20 font-bold">Pengguna Anggaran/<br/>Kuasa Pengguna Anggaran</p>
-                                    <p className="font-bold underline">{kpaEmp?.name || '(..................................................)'}</p>
-                                    <p>NIP. {kpaEmp?.nip || '...................................'}</p>
-                                 </div>
-                                 <div className="w-[45%] text-center">
-                                    <p className="mb-20 font-bold">PPTK</p>
-                                    <p className="font-bold underline">{pptkEmp?.name || '(..................................................)'}</p>
-                                    <p>NIP. {pptkEmp?.nip || '...................................'}</p>
-                                 </div>
-                              </div>
-                              
-                              {/* --- LAMPIRAN FORMAT F (REKAPITULASI) --- */}
-                              {isMoreThanFour && (
-                                <>
-                                  <div className="page-break" />
-                                  
-                                  <div className="font-bold mb-6 text-justify uppercase mt-4" style={{ fontSize: '11pt' }}>
-                                     DAFTAR REKAPITULASI RINCIAN BIAYA PERJALANAN DINAS
-                                  </div>
-                                  
-                                  <div className="mb-4">
-                                     <table className="w-full">
-                                        <tbody>
-                                           <tr><td className="w-48">Lampiran SPPD Nomor</td><td>: {sppd?.id}</td></tr>
-                                           <tr><td>Tanggal</td><td>: {new Date(r.date).toLocaleDateString('id-ID', {day: '2-digit', month: 'long', year: 'numeric'})}</td></tr>
-                                        </tbody>
-                                     </table>
-                                  </div>
-                                  
-                                  <table className="w-full border-collapse border border-black mb-6 text-black text-xs" style={{ color: '#000000' }}>
-                                     <thead className="text-center font-bold bg-gray-100">
-                                        <tr>
-                                           <th className="border border-black p-1">No</th>
-                                           <th className="border border-black p-1">Nama / NIP</th>
-                                           <th className="border border-black p-1">Uang Harian</th>
-                                           <th className="border border-black p-1">Biaya Transport</th>
-                                           <th className="border border-black p-1">Biaya Penginapan</th>
-                                           <th className="border border-black p-1">Uang Reps.</th>
-                                           <th className="border border-black p-1">Lain-lain</th>
-                                           <th className="border border-black p-1">Jumlah</th>
-                                           <th className="border border-black p-1">Tanda Tangan</th>
-                                        </tr>
-                                     </thead>
-                                     <tbody>
-                                       {task?.employeeIds.map((eid, idx) => {
-                                          const e = employees.find(emp => emp.id === eid);
-                                          return (
-                                            <tr key={eid}>
-                                               <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                               <td className="border border-black p-1">
-                                                  <div className="font-bold">{e?.name}</div>
-                                                  <div>NIP. {e?.nip}</div>
-                                               </td>
-                                               <td className="border border-black p-1 text-right">{perPersonDaily > 0 ? Number(perPersonDaily).toLocaleString('id-ID') : '-'}</td>
-                                               <td className="border border-black p-1 text-right">{perPersonTransport > 0 ? Number(perPersonTransport).toLocaleString('id-ID') : '-'}</td>
-                                               <td className="border border-black p-1 text-right">{perPersonHotel > 0 ? Number(perPersonHotel).toLocaleString('id-ID') : '-'}</td>
-                                               <td className="border border-black p-1 text-right">{perPersonRep > 0 ? Number(perPersonRep).toLocaleString('id-ID') : '-'}</td>
-                                               <td className="border border-black p-1 text-right">{perPersonOther > 0 ? Number(perPersonOther).toLocaleString('id-ID') : '-'}</td>
-                                               <td className="border border-black p-1 text-right font-bold">{Number(perPersonTotal).toLocaleString('id-ID')}</td>
-                                               <td className="border border-black p-1 text-center font-bold text-gray-300">{idx+1}..............</td>
-                                            </tr>
-                                          );
-                                       })}
-                                       <tr className="font-bold bg-gray-50">
-                                          <td className="border border-black p-1 text-center" colSpan={2}>TOTAL</td>
-                                          <td className="border border-black p-1 text-right">{r.dailyAllowance.visible ? Number(r.dailyAllowance.total).toLocaleString('id-ID') : '-'}</td>
-                                          <td className="border border-black p-1 text-right">{totalTransport > 0 ? Number(totalTransport).toLocaleString('id-ID') : '-'}</td>
-                                          <td className="border border-black p-1 text-right">{r.accommodation.visible ? Number(r.accommodation.amount).toLocaleString('id-ID') : '-'}</td>
-                                          <td className="border border-black p-1 text-right">{r.representation.visible ? Number(r.representation.amount).toLocaleString('id-ID') : '-'}</td>
-                                          <td className="border border-black p-1 text-right">{r.other.visible ? Number(r.other.amount).toLocaleString('id-ID') : '-'}</td>
-                                          <td className="border border-black p-1 text-right">{Number(r.totalAmount).toLocaleString('id-ID')}</td>
-                                          <td className="border border-black p-1"></td>
-                                       </tr>
-                                       <tr>
-                                         <td className="border border-black p-2 font-bold" colSpan={9}>
-                                            Terbilang: <span className="italic font-normal">{terbilang(Number(r.totalAmount))} Rupiah</span>
-                                         </td>
-                                       </tr>
-                                     </tbody>
-                                  </table>
-
-                                  <div className="flex justify-between mt-8 text-black" style={{ color: '#000000' }}>
-                                     {/* Left Signature Block */}
-                                     <div className="w-[30%] text-center">
-                                        <p className="font-bold mb-16">Pengguna Anggaran /<br/>Kuasa Pengguna Anggaran</p>
-                                        <p className="font-bold underline">{kpaEmp?.name || '(...................................)'}</p>
-                                        <p>NIP. {kpaEmp?.nip || '.........................'}</p>
-                                     </div>
-
-                                     {/* Center Signature Block */}
-                                     <div className="w-[30%] text-center">
-                                        <p className="font-bold mb-16">Pejabat Pelaksana Teknis Kegiatan</p>
-                                        <p className="font-bold underline">{pptkEmp?.name || '(...................................)'}</p>
-                                        <p>NIP. {pptkEmp?.nip || '.........................'}</p>
-                                     </div>
-
-                                     {/* Right Signature Block */}
-                                     <div className="w-[30%] text-center">
-                                        <p className="font-bold mb-16">Bendahara Pengeluaran /<br/>Bendahara Pengeluaran Pembantu</p>
-                                        <p className="font-bold underline">{treasurerEmp?.name || '(...................................)'}</p>
-                                        <p>NIP. {treasurerEmp?.nip || '.........................'}</p>
-                                     </div>
-                                  </div>
-                                </>
-                              )}
-
-                           </div>
-                        );
-                     })()}
-                  </div>
-               </div>
-            </div>
-         </div>
-      )}
 
       <style>{`
         @media print {
@@ -1126,9 +599,9 @@ const ReceiptManager: React.FC = () => {
             width: 100%; 
             padding: 0;
             margin: 0;
-            color: #000000 !important;
+            background: white;
+            color: black;
           }
-          .page-break { page-break-before: always; }
           .print\\:hidden { display: none !important; }
         }
       `}</style>

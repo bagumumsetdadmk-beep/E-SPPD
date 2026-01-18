@@ -149,22 +149,61 @@ const EmployeeManager: React.FC = () => {
     }
   };
 
-  // --- IMPORT / EXPORT LOGIC UPDATED ---
+  // --- IMPORT / EXPORT LOGIC UPDATED TO EXCEL ---
 
   const handleDownloadTemplate = () => {
-      // Menggunakan delimiter titik koma (;) agar otomatis menjadi kolom di Excel format Indonesia
-      const headers = "NIP;Nama Lengkap;Jabatan;Pangkat/Golongan"; 
-      const sample = "199001012020011001;Budi Santoso;Staf Teknis;Penata Muda (III/a)";
+      // Create HTML Table string for Excel
+      const tableContent = `
+        <table border="1">
+          <thead>
+            <tr>
+              <th style="background-color: #e2e8f0; font-weight: bold;">NIP</th>
+              <th style="background-color: #e2e8f0; font-weight: bold;">Nama Lengkap</th>
+              <th style="background-color: #e2e8f0; font-weight: bold;">Jabatan</th>
+              <th style="background-color: #e2e8f0; font-weight: bold;">Pangkat/Golongan</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="mso-number-format:'@'">199001012020011001</td>
+              <td>Budi Santoso</td>
+              <td>Staf Teknis</td>
+              <td>Penata Muda (III/a)</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      const excelFile = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <!--[if gte mso 9]>
+          <xml>
+            <x:ExcelWorkbook>
+              <x:ExcelWorksheets>
+                <x:ExcelWorksheet>
+                  <x:Name>Template Pegawai</x:Name>
+                  <x:WorksheetOptions>
+                    <x:DisplayGridlines/>
+                  </x:WorksheetOptions>
+                </x:ExcelWorksheet>
+              </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+          </xml>
+          <![endif]-->
+          <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+        </head>
+        <body>
+          ${tableContent}
+        </body>
+        </html>
+      `;
       
-      // Tambahkan BOM (\uFEFF) agar Excel membaca encoding UTF-8 dengan benar
-      const csvContent = "\uFEFF" + headers + "\n" + sample;
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([excelFile], { type: 'application/vnd.ms-excel' });
       const url = URL.createObjectURL(blob);
-      
       const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", "template_pegawai.csv");
+      link.href = url;
+      link.download = "Template_Pegawai.xls"; // .xls allows HTML content
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -175,38 +214,40 @@ const EmployeeManager: React.FC = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      // NOTE: Import masih menggunakan logic CSV karena parsing Excel di client butuh library berat (xlsx).
+      // User disarankan Save As CSV jika edit di Excel.
       const file = event.target.files?.[0];
       if (!file) return;
+
+      if (!file.name.endsWith('.csv') && !file.name.endsWith('.txt')) {
+        alert("Untuk fitur Import, mohon simpan file Excel Anda sebagai format CSV (Comma/Semicolon Separated) terlebih dahulu.");
+        return;
+      }
 
       const reader = new FileReader();
       reader.onload = async (e) => {
           const text = e.target?.result as string;
           if (!text) return;
 
-          // Split baris (handle Windows CRLF dan Unix LF)
-          const rows = text.split(/\r?\n/).slice(1); // Skip header
+          const rows = text.split(/\r?\n/).slice(1);
           const newEmployees: Employee[] = [];
           
           rows.forEach(row => {
-              if (!row.trim()) return; // Skip baris kosong
-              
-              // Split berdasarkan titik koma (;) sesuai template
-              // Clean up: hapus tanda kutip di awal/akhir jika excel menambahkannya
-              const cols = row.split(';').map(c => c.replace(/^"|"$/g, '').trim());
+              if (!row.trim()) return;
+              // Detect delimiter
+              const delimiter = row.includes(';') ? ';' : ',';
+              const cols = row.split(delimiter).map(c => c.replace(/^"|"$/g, '').trim());
               
               if (cols.length >= 4) {
                   const nip = cols[0];
                   const name = cols[1];
-                  const position = cols[2];
-                  const grade = cols[3];
-                  
                   if (nip && name) {
                       newEmployees.push({
                           id: Date.now().toString() + Math.floor(Math.random() * 1000),
-                          nip: nip.replace(/'/g, ''), // Remove excel single quote text helper
+                          nip: nip.replace(/'/g, ''),
                           name,
-                          position,
-                          grade
+                          position: cols[2] || '',
+                          grade: cols[3] || ''
                       });
                   }
               }
@@ -217,7 +258,6 @@ const EmployeeManager: React.FC = () => {
               setEmployees(merged);
               syncToLocalStorage(merged);
               
-              // Try Sync DB
               const client = getSupabase();
               if (client) {
                   const { error } = await client.from('employees').upsert(newEmployees);
@@ -225,11 +265,10 @@ const EmployeeManager: React.FC = () => {
               }
               alert(`Berhasil mengimpor ${newEmployees.length} pegawai.`);
           } else {
-              alert("Tidak ada data valid. Pastikan file CSV menggunakan format kolom (pemisah titik koma/semicolon).");
+              alert("Gagal membaca data. Pastikan format CSV benar.");
           }
       };
       reader.readAsText(file);
-      // Reset input
       event.target.value = '';
   };
 
@@ -252,13 +291,13 @@ const EmployeeManager: React.FC = () => {
           </button>
           
           <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
-             <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-r border-slate-200 text-xs font-medium flex items-center" title="Download Template CSV (Excel)">
-                <FileSpreadsheet size={16} className="mr-1"/> Template
+             <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-r border-slate-200 text-xs font-medium flex items-center" title="Download Template Excel">
+                <FileSpreadsheet size={16} className="mr-1"/> Template Excel
              </button>
              <button onClick={handleImportClick} className="px-3 py-2 text-indigo-600 hover:bg-indigo-50 text-xs font-medium flex items-center" title="Import CSV">
-                <Upload size={16} className="mr-1"/> Import
+                <Upload size={16} className="mr-1"/> Import CSV
              </button>
-             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv,.txt" className="hidden" />
           </div>
 
           <button 

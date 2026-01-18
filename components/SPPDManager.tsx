@@ -292,14 +292,20 @@ const SPPDManager: React.FC = () => {
     navigate('/kwitansi', { state: { createSppdId: sppdId } });
   };
 
-  const handlePrint = (sppd: SPPD) => {
+  const handlePrint = (sppd?: SPPD) => {
     // Ensure settings are fresh when printing
     const settingsData = localStorage.getItem('agency_settings');
     if (settingsData) {
       setAgencySettings(JSON.parse(settingsData));
     }
-    setPrintingSppd(sppd);
-    setIsPrintModalOpen(true);
+    
+    if (sppd) {
+        setPrintingSppd(sppd);
+        setIsPrintModalOpen(true);
+    } else {
+        // Trigger actual print dialog
+        window.print();
+    }
   };
 
   // Helper renderers
@@ -328,7 +334,7 @@ const SPPDManager: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Penerbitan SPPD</h1>
           <p className="text-slate-500">Kelola penerbitan dokumen SPPD berdasarkan Surat Tugas yang disetujui.</p>
@@ -336,7 +342,7 @@ const SPPDManager: React.FC = () => {
       </div>
 
       {/* SECTION 1: READY TO PROCESS (Pending Assignments) */}
-      <div className="space-y-4">
+      <div className="space-y-4 print:hidden">
         <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center">
           <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div>
           Surat Tugas Siap Proses SPPD ({readyToProcess.length})
@@ -383,10 +389,10 @@ const SPPDManager: React.FC = () => {
         )}
       </div>
 
-      <div className="border-t border-slate-200 my-6"></div>
+      <div className="border-t border-slate-200 my-6 print:hidden"></div>
 
       {/* SECTION 2: ISSUED SPPDs */}
-      <div className="space-y-4">
+      <div className="space-y-4 print:hidden">
          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center">
           <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div>
           Dokumen SPPD Terbit ({sppds.length})
@@ -553,9 +559,8 @@ const SPPDManager: React.FC = () => {
         </div>
       )}
 
-      {/* PRINT MODAL (Same content as previous but omitted here for brevity if no changes, assuming previous content) */}
+      {/* PRINT MODAL */}
       {isPrintModalOpen && printingSppd && (
-         /* ... Print Modal Content Same as Before ... */
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
           <div className="bg-white rounded-2xl w-full max-w-[210mm] shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 print:shadow-none print:m-0 print:w-full print:max-h-none print:h-auto">
              <div className="p-4 border-b flex justify-between items-center bg-white rounded-t-2xl flex-shrink-0 print:hidden">
@@ -564,14 +569,13 @@ const SPPDManager: React.FC = () => {
                  <h3 className="text-lg font-bold text-slate-900">Cetak SPPD</h3>
                </div>
                <div className="flex space-x-2">
-                 <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm hover:bg-indigo-700 flex items-center space-x-2"><Printer size={16} /><span>Cetak Sekarang</span></button>
+                 <button onClick={() => handlePrint()} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm hover:bg-indigo-700 flex items-center space-x-2"><Printer size={16} /><span>Cetak Sekarang</span></button>
                  <button onClick={() => setIsPrintModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
                </div>
             </div>
 
             <div className="overflow-y-auto flex-1 custom-scrollbar">
               <div id="print-area" className="bg-white leading-tight text-sm text-black p-[10mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000' }}>
-                {/* Simplified re-render logic for brevity - assume previous logic is here */}
                 {(() => {
                     const details = getTaskDetails(printingSppd.assignmentId);
                     if (!details.taskObj) return <div className="p-10 text-center text-red-500">Data tidak ditemukan</div>;
@@ -656,7 +660,14 @@ const SPPDManager: React.FC = () => {
                             <div className="mt-8 border border-black text-black">
                                 {/* Back side logic (Visum) - Simplified for brevity */}
                                 <div className="p-2 text-center font-bold">CATATAN DAN VISUM</div>
-                                {/* ... Same as before ... */}
+                                <div className="grid grid-cols-2">
+                                   <div className="border-t border-r border-black p-2 min-h-[100px]"></div>
+                                   <div className="border-t border-black p-2 min-h-[100px]">
+                                      <p>Berangkat dari: Demak</p>
+                                      <p>Tanggal: {formatDateIndo(printingSppd.startDate)}</p>
+                                      <p>Ke: {dest?.name}</p>
+                                   </div>
+                                </div>
                             </div>
                         </div>
                     );
@@ -680,6 +691,7 @@ const SPPDManager: React.FC = () => {
             padding: 0;
             margin: 0;
             color: black !important;
+            background: white;
           }
           .page-break { page-break-before: always; }
           .print\\:hidden { display: none !important; }

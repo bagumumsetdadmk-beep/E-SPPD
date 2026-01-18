@@ -30,7 +30,7 @@ import FundingManager from './components/FundingManager';
 import AssignmentManager from './components/AssignmentManager';
 import SPPDManager from './components/SPPDManager';
 import ReceiptManager from './components/ReceiptManager';
-import ReportManager from './components/ReportManager';
+// ReportManager removed
 import RecapManager from './components/RecapManager';
 import SettingsManager from './components/SettingsManager';
 import Login from './components/Login';
@@ -90,7 +90,7 @@ const App: React.FC = () => {
     { to: '/surat-tugas', icon: FileText, label: 'Surat Tugas' },
     { to: '/sppd', icon: ClipboardList, label: 'SPPD' },
     { to: '/kwitansi', icon: ReceiptIcon, label: 'Kwitansi' },
-    { to: '/laporan', icon: BarChart3, label: 'Laporan Perjalanan' },
+    // Laporan Perjalanan removed
     { to: '/rekap', icon: BarChart3, label: 'Rekap Data' },
     { to: '/pengaturan', icon: Settings, label: 'Pengaturan' },
   ];
@@ -157,7 +157,7 @@ const App: React.FC = () => {
             ))}
             
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Administrasi SPPD</p>
-            {menuItems.slice(6, 11).map((item) => (
+            {menuItems.slice(6, 9).map((item) => (
               <SidebarItem 
                 key={item.to} 
                 {...item} 
@@ -166,7 +166,7 @@ const App: React.FC = () => {
             ))}
 
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistem</p>
-            {menuItems.slice(11).map((item) => (
+            {menuItems.slice(9).map((item) => (
               <SidebarItem 
                 key={item.to} 
                 {...item} 
@@ -238,7 +238,6 @@ const App: React.FC = () => {
             <Route path="/surat-tugas" element={<AssignmentManager />} />
             <Route path="/sppd" element={<SPPDManager />} />
             <Route path="/kwitansi" element={<ReceiptManager />} />
-            <Route path="/laporan" element={<ReportManager />} />
             <Route path="/rekap" element={<RecapManager />} />
             <Route path="/pengaturan" element={<SettingsManager />} />
           </Routes>

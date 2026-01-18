@@ -345,9 +345,13 @@ const AssignmentManager: React.FC = () => {
     return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(date);
   };
 
+  const handlePrint = () => {
+      window.print();
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Surat Tugas</h1>
           <p className="text-slate-500">Penerbitan, Verifikasi, dan Pencetakan Surat Tugas resmi.</p>
@@ -366,7 +370,7 @@ const AssignmentManager: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden print:hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -482,7 +486,6 @@ const AssignmentManager: React.FC = () => {
             
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar bg-slate-50/30">
               <form id="assignment-form" onSubmit={handleSave} className="space-y-8">
-                {/* ... (Form Content remains same as before) ... */}
                 {/* Section 1 */}
                 <div className="space-y-4">
                   <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-widest flex items-center">
@@ -727,7 +730,7 @@ const AssignmentManager: React.FC = () => {
                  <h3 className="text-lg font-bold text-slate-900">Pratinjau Cetak</h3>
                </div>
                <div className="flex space-x-2">
-                 <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm hover:bg-indigo-700 flex items-center space-x-2"><Printer size={16} /><span>Cetak Sekarang</span></button>
+                 <button onClick={handlePrint} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg text-sm hover:bg-indigo-700 flex items-center space-x-2"><Printer size={16} /><span>Cetak Sekarang</span></button>
                  <button onClick={() => setIsPrintModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
                </div>
             </div>
@@ -884,6 +887,7 @@ const AssignmentManager: React.FC = () => {
 
       <style>{`
         @media print {
+          @page { size: auto; margin: 10mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
           #print-area { 
@@ -893,6 +897,8 @@ const AssignmentManager: React.FC = () => {
             width: 100%; 
             padding: 0;
             margin: 0;
+            background: white;
+            color: black;
           }
           .print\\:hidden { display: none !important; }
         }
