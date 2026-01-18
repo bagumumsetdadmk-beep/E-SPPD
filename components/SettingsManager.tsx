@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe } from 'lucide-react';
+import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe, FileCode, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { AgencySettings } from '../types';
 
 const INITIAL_SETTINGS: AgencySettings = {
@@ -24,19 +25,116 @@ const SettingsManager: React.FC = () => {
 
   const [previewLogo, setPreviewLogo] = useState<string>(settings.logoUrl);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // New state for DB saving process
+  const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  
+  // Modals for SQL/Policies
+  const [showSqlModal, setShowSqlModal] = useState(false);
+  const [showStorageModal, setShowStorageModal] = useState(false);
 
+  // 1. Check Connection & Load Data
   useEffect(() => {
-    // Load DB Config on mount
     const savedDb = localStorage.getItem('supabase_config');
     if (savedDb) {
-      setDbConfig(JSON.parse(savedDb));
+      const config = JSON.parse(savedDb);
+      setDbConfig(config);
       setIsDbConnected(true);
+      fetchSettingsFromDb(config);
     }
   }, []);
 
-  const handleSave = (e: React.FormEvent) => {
+  const fetchSettingsFromDb = async (config: { url: string; key: string }) => {
+      if (!config.url || !config.key) return;
+      setIsLoadingData(true);
+      try {
+          const supabase = createClient(config.url, config.key);
+          // Ambil 1 baris pertama saja (Single Row Pattern)
+          const { data, error } = await supabase
+            .from('agency_settings')
+            .select('*')
+            .limit(1)
+            .maybeSingle(); // Gunakan maybeSingle agar tidak error jika kosong
+
+          if (error) throw error;
+
+          if (data) {
+              // Mapping dari snake_case (DB) ke camelCase (App)
+              const newSettings: AgencySettings = {
+                  name: data.name,
+                  department: data.department,
+                  address: data.address,
+                  contactInfo: data.contact_info, // Mapping field
+                  logoUrl: data.logo_url || INITIAL_SETTINGS.logoUrl
+              };
+              setSettings(newSettings);
+              setPreviewLogo(newSettings.logoUrl);
+              localStorage.setItem('agency_settings', JSON.stringify(newSettings));
+          }
+      } catch (err) {
+          console.error("Gagal mengambil data pengaturan:", err);
+      } finally {
+          setIsLoadingData(false);
+      }
+  };
+
+  // 2. Handle Save Logic (Local + Cloud)
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+
+    // A. Simpan Lokal (Selalu dilakukan untuk fallback)
     localStorage.setItem('agency_settings', JSON.stringify(settings));
+
+    // B. Simpan Cloud (Jika terkoneksi)
+    if (isDbConnected && dbConfig.url && dbConfig.key) {
+        try {
+            const supabase = createClient(dbConfig.url, dbConfig.key);
+
+            // Cek apakah data sudah ada?
+            const { data: existing } = await supabase
+                .from('agency_settings')
+                .select('id')
+                .limit(1)
+                .maybeSingle();
+
+            if (existing) {
+                // UPDATE
+                const { error } = await supabase
+                    .from('agency_settings')
+                    .update({
+                        name: settings.name,
+                        department: settings.department,
+                        address: settings.address,
+                        contact_info: settings.contactInfo, // snake_case
+                        logo_url: settings.logoUrl,
+                        updated_at: new Date()
+                    })
+                    .eq('id', existing.id);
+                if (error) throw error;
+            } else {
+                // INSERT
+                const { error } = await supabase
+                    .from('agency_settings')
+                    .insert([{
+                        name: settings.name,
+                        department: settings.department,
+                        address: settings.address,
+                        contact_info: settings.contactInfo, // snake_case
+                        logo_url: settings.logoUrl
+                    }]);
+                if (error) throw error;
+            }
+
+        } catch (error: any) {
+            alert(`Gagal menyimpan ke Database: ${error.message}`);
+            setIsSaving(false);
+            return;
+        }
+    }
+
+    // Feedback UI
+    setIsSaving(false);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -44,8 +142,15 @@ const SettingsManager: React.FC = () => {
   const handleSaveDb = (e: React.FormEvent) => {
     e.preventDefault();
     if (dbConfig.url && dbConfig.key) {
-        localStorage.setItem('supabase_config', JSON.stringify(dbConfig));
-        setIsDbConnected(true);
+        try {
+            // Validasi format URL sederhana
+            new URL(dbConfig.url);
+            localStorage.setItem('supabase_config', JSON.stringify(dbConfig));
+            setIsDbConnected(true);
+            fetchSettingsFromDb(dbConfig); // Auto fetch setelah connect
+        } catch (error) {
+            alert("Format URL Supabase tidak valid.");
+        }
     }
   };
 
@@ -57,16 +162,67 @@ const SettingsManager: React.FC = () => {
       }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setSettings({ ...settings, logoUrl: base64String });
-        setPreviewLogo(base64String);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Helper: Gunakan Base64 lokal jika Cloud gagal
+    const useLocalFallback = () => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64String = reader.result as string;
+            setSettings({ ...settings, logoUrl: base64String });
+            setPreviewLogo(base64String);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Validasi Ukuran (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("Ukuran file terlalu besar. Maksimal 2MB.");
+        return;
+    }
+
+    // Jika Terkoneksi DB, Coba Upload
+    if (isDbConnected && dbConfig.url && dbConfig.key) {
+        setIsUploading(true);
+        try {
+            const supabase = createClient(dbConfig.url, dbConfig.key);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `logo-${Date.now()}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            // Attempt Upload
+            const { error: uploadError } = await supabase.storage
+                .from('images')
+                .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            // Get URL
+            const { data } = supabase.storage
+                .from('images')
+                .getPublicUrl(filePath);
+
+            if (data.publicUrl) {
+                setSettings({ ...settings, logoUrl: data.publicUrl });
+                setPreviewLogo(data.publicUrl);
+                // Kita tidak auto-save settings ke DB di sini, user harus klik Simpan.
+            }
+
+        } catch (error: any) {
+            console.error("Upload Error:", error);
+            alert(`Gagal upload ke Storage Cloud (Supabase): ${error.message}\n\nSistem akan menggunakan mode offline (Base64) untuk logo ini sementara waktu.`);
+            useLocalFallback();
+        } finally {
+            setIsUploading(false);
+        }
+    } else {
+        // Mode Offline
+        useLocalFallback();
     }
   };
 
@@ -89,9 +245,25 @@ const SettingsManager: React.FC = () => {
                 <Database size={100} />
              </div>
              
-             <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4 flex items-center">
-                <Globe size={16} className="mr-2" /> Sinkronisasi Database (Cloud)
-             </h3>
+             <div className="flex justify-between items-center border-b pb-2 mb-4">
+                 <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest flex items-center">
+                    <Globe size={16} className="mr-2" /> Sinkronisasi Database (Cloud)
+                 </h3>
+                 <div className="flex space-x-2 relative z-20">
+                     <button 
+                        onClick={() => setShowStorageModal(true)}
+                        className="text-[10px] font-bold px-2 py-1 bg-amber-50 text-amber-600 rounded border border-amber-100 hover:bg-amber-100 flex items-center"
+                     >
+                        <Upload size={10} className="mr-1" /> Fix Storage
+                     </button>
+                     <button 
+                        onClick={() => setShowSqlModal(true)}
+                        className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-600 rounded border border-slate-200 hover:bg-slate-200 flex items-center"
+                     >
+                        <FileCode size={10} className="mr-1" /> SQL Schema
+                     </button>
+                 </div>
+             </div>
 
              {!isDbConnected ? (
                <form onSubmit={handleSaveDb} className="space-y-4 relative z-10">
@@ -146,19 +318,38 @@ const SettingsManager: React.FC = () => {
                        <p className="font-mono text-slate-700 truncate">{dbConfig.url}</p>
                     </div>
 
-                    <button 
-                        onClick={handleDisconnectDb}
-                        className="px-6 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm"
-                     >
-                        <Unplug size={16} />
-                        <span>Putus Koneksi / Reset</span>
-                     </button>
+                    <div className="flex space-x-3">
+                        <button 
+                            onClick={() => fetchSettingsFromDb(dbConfig)}
+                            disabled={isLoadingData}
+                            className="px-4 py-2 bg-indigo-50 text-indigo-600 font-bold rounded-xl hover:bg-indigo-100 flex items-center space-x-2 transition-all text-sm"
+                        >
+                            <RefreshCw size={16} className={isLoadingData ? "animate-spin" : ""} />
+                            <span>Sync Data</span>
+                        </button>
+                        <button 
+                            onClick={handleDisconnectDb}
+                            className="px-4 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm"
+                        >
+                            <Unplug size={16} />
+                            <span>Putus Koneksi</span>
+                        </button>
+                    </div>
                 </div>
              )}
           </div>
 
           {/* AGENCY SETTINGS FORM */}
-          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
+          <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6 relative">
+            {isLoadingData && (
+                <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center backdrop-blur-sm rounded-2xl">
+                    <div className="flex flex-col items-center">
+                        <Loader2 className="animate-spin text-indigo-600 mb-2" size={32} />
+                        <span className="text-sm font-semibold text-slate-600">Mengambil data dari Database...</span>
+                    </div>
+                </div>
+            )}
+            
             <div className="space-y-4">
                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Identitas Kop Surat</h3>
                
@@ -224,10 +415,17 @@ const SettingsManager: React.FC = () => {
                
                <div className="flex items-start space-x-6">
                   <div className="w-32 h-32 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative">
-                     {previewLogo ? (
-                        <img src={previewLogo} alt="Logo Preview" className="w-full h-full object-contain p-2" />
+                     {isUploading ? (
+                        <div className="flex flex-col items-center justify-center text-indigo-600">
+                            <Loader2 size={24} className="animate-spin mb-2" />
+                            <span className="text-[10px] font-bold">Uploading...</span>
+                        </div>
                      ) : (
-                        <ImageIcon className="text-slate-300" size={32} />
+                        previewLogo ? (
+                            <img src={previewLogo} alt="Logo Preview" className="w-full h-full object-contain p-2" />
+                        ) : (
+                            <ImageIcon className="text-slate-300" size={32} />
+                        )
                      )}
                   </div>
                   <div className="flex-1">
@@ -239,15 +437,23 @@ const SettingsManager: React.FC = () => {
                            onChange={handleLogoUpload}
                            className="hidden" 
                            id="logo-upload"
+                           disabled={isUploading}
                         />
                         <label 
                            htmlFor="logo-upload"
-                           className="inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+                           className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                            <Upload size={16} className="mr-2" />
-                           Pilih Gambar...
+                           {isUploading ? 'Sedang Upload...' : 'Pilih Gambar...'}
                         </label>
-                        <p className="text-xs text-slate-400 mt-2">Format: PNG, JPG (Transparan direkomendasikan). Max 1MB.</p>
+                        <p className="text-xs text-slate-400 mt-2">
+                            {isDbConnected ? (
+                                <span className="text-emerald-600 flex items-center"><Check size={12} className="mr-1"/> Storage Online Aktif (Images Bucket)</span>
+                            ) : (
+                                "Mode Offline: Gambar disimpan lokal (Base64)."
+                            )}
+                            <br/>Format: PNG, JPG. Max 2MB.
+                        </p>
                      </div>
                   </div>
                </div>
@@ -257,10 +463,11 @@ const SettingsManager: React.FC = () => {
                {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse">Pengaturan berhasil disimpan!</span>}
                <button 
                   type="submit"
-                  className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center space-x-2 transition-all"
+                  disabled={isSaving}
+                  className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center space-x-2 transition-all disabled:opacity-70 disabled:cursor-wait"
                >
-                  <Save size={18} />
-                  <span>Simpan Perubahan</span>
+                  {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  <span>{isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
                </button>
             </div>
           </form>
@@ -276,6 +483,9 @@ const SettingsManager: React.FC = () => {
                        src={previewLogo} 
                        alt="Logo" 
                        className="h-20 w-auto object-contain"
+                       onError={(e) => {
+                           (e.target as HTMLImageElement).src = 'https://placehold.co/100x100?text=Error';
+                       }}
                     />
                  </div>
                  <div className="text-center w-full pl-2">
@@ -298,6 +508,84 @@ const SettingsManager: React.FC = () => {
            <p className="text-xs text-slate-400 mt-4 text-center">Tampilan ini akan digunakan pada semua dokumen cetak (Surat Tugas & SPPD).</p>
         </div>
       </div>
+
+      {/* SQL MODAL */}
+      {showSqlModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+                  <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                      <h3 className="font-bold text-slate-800">Setup Database Schema (SQL)</h3>
+                      <button onClick={() => setShowSqlModal(false)}><Unplug size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                  </div>
+                  <div className="p-6 bg-slate-900 text-slate-300 font-mono text-xs overflow-auto max-h-[60vh]">
+                      <pre>{`-- 1. Table untuk Pengaturan Instansi
+CREATE TABLE public.agency_settings (
+    id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    name TEXT NOT NULL,
+    department TEXT NOT NULL,
+    address TEXT,
+    contact_info TEXT,
+    logo_url TEXT, -- Menyimpan URL Publik dari Storage
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Enable RLS (Security)
+ALTER TABLE public.agency_settings ENABLE ROW LEVEL SECURITY;
+
+-- 3. Policy (Akses Publik untuk kemudahan awal)
+CREATE POLICY "Enable read access for all users" ON public.agency_settings FOR SELECT USING (true);
+CREATE POLICY "Enable insert access for all users" ON public.agency_settings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update access for all users" ON public.agency_settings FOR UPDATE USING (true);`}</pre>
+                  </div>
+                  <div className="p-4 border-t text-right">
+                      <button onClick={() => setShowSqlModal(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-lg hover:bg-slate-300">Tutup</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* STORAGE POLICY MODAL */}
+      {showStorageModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+                  <div className="p-4 border-b bg-amber-50 flex justify-between items-center">
+                      <h3 className="font-bold text-amber-800 flex items-center"><AlertCircle size={20} className="mr-2"/> Setup Storage Policy (Wajib)</h3>
+                      <button onClick={() => setShowStorageModal(false)}><Unplug size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <p className="text-sm text-slate-600">
+                          Jalankan perintah SQL berikut di SQL Editor Supabase untuk membuat Bucket dan mengizinkan akses upload/download.
+                      </p>
+
+                      <div className="bg-slate-900 p-4 rounded-lg text-slate-300 font-mono text-xs overflow-auto">
+<pre>{`-- Salin semua kode di bawah ini ke SQL Editor Supabase Anda:
+
+-- 1. Buat Bucket 'images' (Public)
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('images', 'images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Hapus Policy Lama (jika ada, agar tidak duplikat/error)
+DROP POLICY IF EXISTS "Allow Public Upload" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Public Select" ON storage.objects;
+
+-- 3. Buat Policy Upload (INSERT) - Akses Publik
+CREATE POLICY "Allow Public Upload" 
+ON storage.objects FOR INSERT 
+WITH CHECK ( bucket_id = 'images' );
+
+-- 4. Buat Policy Lihat (SELECT) - Akses Publik
+CREATE POLICY "Allow Public Select" 
+ON storage.objects FOR SELECT 
+USING ( bucket_id = 'images' );`}</pre>
+                      </div>
+                  </div>
+                  <div className="p-4 border-t text-right">
+                      <button onClick={() => setShowStorageModal(false)} className="px-4 py-2 bg-amber-100 text-amber-700 font-bold rounded-lg hover:bg-amber-200">Mengerti, Tutup</button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
