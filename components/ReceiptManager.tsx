@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -91,7 +92,7 @@ const ReceiptManager: React.FC = () => {
 
   useEffect(() => {
     loadMasterData();
-    fetchReceipts();
+    fetchReceiptsAndRefs();
   }, []);
 
   const loadMasterData = () => {
@@ -109,15 +110,18 @@ const ReceiptManager: React.FC = () => {
     }
   };
 
-  const fetchReceipts = async () => {
+  // UPDATED: Fetch Receipts AND Ref Data (SPPDs, Tasks) from DB to ensure fresh data
+  const fetchReceiptsAndRefs = async () => {
     setIsLoading(true);
     const client = getSupabase();
     if(client) {
         try {
-            const { data, error } = await client.from('receipts').select('*').order('created_at', { ascending: false });
-            if(error) throw error;
-            if(data) {
-                const mapped: Receipt[] = data.map((item: any) => ({
+            // 1. Fetch Receipts
+            const { data: recData, error: recError } = await client.from('receipts').select('*').order('created_at', { ascending: false });
+            if(recError) throw recError;
+            
+            if(recData) {
+                const mapped: Receipt[] = recData.map((item: any) => ({
                     id: item.id,
                     sppdId: item.sppd_id,
                     date: item.date,
@@ -132,23 +136,71 @@ const ReceiptManager: React.FC = () => {
                     status: item.status,
                     treasurerId: item.treasurer_id,
                     pptkId: item.pptk_id,
-                    kpaId: item.kpa_id
+                    kpa_id: item.kpa_id
                 }));
                 setReceipts(mapped);
-                setIsLoading(false);
-                return;
+                // Also Sync LocalStorage
+                syncToLocalStorage(mapped);
             }
-        } catch(e) { console.error(e); }
-    }
 
-    const saved = localStorage.getItem('receipt_data_v2');
-    const parsed = saved ? JSON.parse(saved) : [];
-    const sanitized = parsed.map((r: any) => ({
-      ...INITIAL_RECEIPT_STATE,
-      ...r,
-      totalAmount: Number(r.totalAmount) || 0
-    }));
-    setReceipts(sanitized);
+            // 2. Fetch Reference Data (SPPD & Assignments) to ensure we can create new receipts
+            const { data: sppdData } = await client.from('sppds').select('*');
+            if (sppdData) {
+                const mappedSppds: SPPD[] = sppdData.map((item: any) => ({
+                    id: item.id,
+                    assignmentId: item.assignment_id,
+                    startDate: item.start_date,
+                    endDate: item.end_date,
+                    status: item.status,
+                    transportId: item.transport_id,
+                    fundingId: item.funding_id
+                }));
+                setSppds(mappedSppds);
+                localStorage.setItem('sppd_data', JSON.stringify(mappedSppds));
+            }
+
+            const { data: taskData } = await client.from('assignment_letters').select('*');
+            if (taskData) {
+                const mappedTasks: AssignmentLetter[] = taskData.map((item: any) => ({
+                    id: item.id,
+                    number: item.number,
+                    date: item.date,
+                    basis: item.basis,
+                    employeeIds: item.employee_ids || [], 
+                    subject: item.subject,
+                    destinationId: item.destination_id,
+                    destinationAddress: item.destination_address,
+                    startDate: item.start_date,
+                    endDate: item.end_date,
+                    duration: item.duration,
+                    signatoryId: item.signatory_id,
+                    status: item.status,
+                    signatureType: item.signature_type,
+                    upperTitle: item.upper_title,
+                    intermediateTitle: item.intermediate_title
+                }));
+                setAssignments(mappedTasks);
+                localStorage.setItem('assignment_tasks_v2', JSON.stringify(mappedTasks));
+            }
+
+            // Refresh other masters
+            const { data: empData } = await client.from('employees').select('*');
+            if(empData) setEmployees(empData);
+            const { data: cityData } = await client.from('cities').select('*');
+            if(cityData) setCities(cityData.map((d:any) => ({...d, dailyAllowance: d.daily_allowance})));
+
+        } catch(e) { console.error(e); }
+    } else {
+        // Local Only
+        const saved = localStorage.getItem('receipt_data_v2');
+        const parsed = saved ? JSON.parse(saved) : [];
+        const sanitized = parsed.map((r: any) => ({
+            ...INITIAL_RECEIPT_STATE,
+            ...r,
+            totalAmount: Number(r.totalAmount) || 0
+        }));
+        setReceipts(sanitized);
+    }
     setIsLoading(false);
   };
 
@@ -159,24 +211,33 @@ const ReceiptManager: React.FC = () => {
   // Navigate from SPPD Manager
   useEffect(() => {
     if (location.state && location.state.createSppdId) {
-      loadMasterData();
-      const sppdId = location.state.createSppdId;
-      const existing = receipts.find(r => r.sppdId === sppdId);
-      if (existing) {
-        handleOpenModal(existing);
-      } else {
-        handleCreateFromSPPD(sppdId);
+      // Check if data is ready
+      if (sppds.length > 0 && assignments.length > 0) {
+          const sppdId = location.state.createSppdId;
+          const existing = receipts.find(r => r.sppdId === sppdId);
+          if (existing) {
+            handleOpenModal(existing);
+          } else {
+            handleCreateFromSPPD(sppdId);
+          }
+          // Clear state to prevent loop, but careful not to break re-renders
+          navigate(location.pathname, { replace: true, state: {} });
       }
-      navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state, receipts]);
+  }, [location.state, sppds, assignments]); // Wait for these to load
 
   const handleCreateFromSPPD = (sppdId: string) => {
     const sppd = sppds.find(s => s.id === sppdId);
-    if (!sppd) return;
+    if (!sppd) {
+        console.warn("SPPD Not found for ID:", sppdId);
+        return;
+    }
 
     const task = assignments.find(a => a.id === sppd.assignmentId);
-    if (!task) return;
+    if (!task) {
+        console.warn("Task Not found for SPPD:", sppdId);
+        return;
+    }
 
     const city = cities.find(c => c.id === task.destinationId);
     const dailyRate = city ? city.dailyAllowance : 0;
@@ -202,7 +263,6 @@ const ReceiptManager: React.FC = () => {
   };
 
   const handleOpenModal = (receipt?: Receipt) => {
-    loadMasterData();
     if (receipt) {
       setEditingReceipt(receipt);
       setFormData({
@@ -251,7 +311,8 @@ const ReceiptManager: React.FC = () => {
             updated.dailyAllowance.total = updated.dailyAllowance.days * updated.dailyAllowance.amountPerDay * count;
         }
       } else if (['transport', 'accommodation', 'fuel', 'toll', 'representation', 'other'].includes(section as string)) {
-        if (!updated[section]) updated[section] = { ...INITIAL_RECEIPT_STATE[section as keyof Receipt] };
+        // Fix: Cast to any or CostItem to prevent TS error about spreading union types including primitives
+        if (!updated[section]) updated[section] = { ...(INITIAL_RECEIPT_STATE[section as keyof Receipt] as any) };
         updated[section][field] = value;
       } else {
         updated[section] = value;
@@ -302,7 +363,7 @@ const ReceiptManager: React.FC = () => {
             const { error } = await client.from('receipts').upsert(dbPayload);
             if(error) {
                 alert("Simpan DB Gagal: " + error.message);
-                fetchReceipts();
+                fetchReceiptsAndRefs();
             }
         } catch(e) { console.error(e); }
     }
@@ -330,8 +391,11 @@ const ReceiptManager: React.FC = () => {
   };
 
   const handlePrint = (receipt?: Receipt) => {
-      loadMasterData(); // Ensure fresh settings
       if(receipt) {
+          // Re-fetch employees incase names updated
+          const empData = localStorage.getItem('employees');
+          if(empData) setEmployees(JSON.parse(empData));
+          
           setPrintingReceipt(receipt);
           setIsPrintModalOpen(true);
       } else {
@@ -392,7 +456,7 @@ const ReceiptManager: React.FC = () => {
           <p className="text-slate-500">Kelola rincian biaya perjalanan dinas.</p>
         </div>
         <div className="flex items-center space-x-2">
-            <button onClick={fetchReceipts} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+            <button onClick={fetchReceiptsAndRefs} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
             <button onClick={() => handleOpenModal()} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">

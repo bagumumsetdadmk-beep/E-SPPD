@@ -610,7 +610,7 @@ const SPPDManager: React.FC = () => {
             </div>
 
             <div className="overflow-y-auto flex-1 custom-scrollbar">
-              <div id="print-area" className="bg-white leading-tight text-sm text-black p-[10mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000' }}>
+              <div id="print-area" className="bg-white leading-tight text-sm text-black p-[15mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000' }}>
                 {(() => {
                     const details = getTaskDetails(printingSppd.assignmentId);
                     if (!details.taskObj) return <div className="p-10 text-center text-red-500">Data tidak ditemukan</div>;
@@ -623,85 +623,219 @@ const SPPDManager: React.FC = () => {
                     const fund = fundingSources.find(f => f.id === printingSppd.fundingId);
                     const followers = taskObj?.employeeIds.slice(1).map(eid => employees.find(e => e.id === eid)) || [];
 
-                    const renderSignature = () => (
-                        <div className="flex justify-between mt-8 text-black" style={{ color: '#000000' }}>
-                           <div className="w-[40%] text-center">
-                              <div className="mb-4 h-[42px]"></div> 
-                              <div className="font-bold text-center mb-20 mt-4"><p>Pelaksana SPPD</p></div>
-                              <div className="font-bold underline text-center">{emp?.name}</div>
-                              <div className="text-center">{emp?.grade}</div>
-                              <div className="text-center">NIP. {emp?.nip}</div>
-                           </div>
-                           <div className="w-[50%]">
-                              <div className="mb-4">
-                                 <table className="w-full text-black" style={{ color: '#000000' }}>
-                                   <tbody>
-                                     <tr><td className="border-none p-0 w-[40%]">Dikeluarkan di</td><td className="border-none p-0">: Demak</td></tr>
-                                     <tr><td className="border-none p-0">Tanggal</td><td className="border-none p-0">: {formatDateIndo(printingSppd.startDate)}</td></tr>
-                                   </tbody>
-                                 </table>
-                              </div>
-                              <div className="font-bold text-center mb-20 mt-4"><p>{signatory?.role}</p></div>
-                              <div className="font-bold underline text-center">{signatoryEmp?.name}</div>
-                              <div className="text-center">{signatoryEmp?.grade}</div>
-                              <div className="text-center">NIP. {signatoryEmp?.nip}</div>
-                           </div>
-                        </div>
-                    );
+                    const commonBorder = "border border-black p-1 align-top";
 
                     return (
-                        <div>
-                            {/* Page 1 Logic */}
+                        <div className="text-xs">
+                            {/* PAGE 1: SPPD FRONT */}
                             <div className="flex items-center border-b-[3px] border-black pb-2 mb-4">
-                               <div className="w-24 text-center">
-                                  <img src={agencySettings.logoUrl} className="h-20 w-auto object-contain mx-auto" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                               <div className="w-20 text-center mr-4">
+                                  <img src={agencySettings.logoUrl} className="h-16 w-auto object-contain mx-auto" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                </div>
                                <div className="flex-1 text-center">
-                                  <h3 className="text-md font-medium uppercase">{agencySettings.name}</h3>
-                                  <h1 className="text-lg font-bold uppercase">{agencySettings.department}</h1>
-                                  <p className="text-xs">{agencySettings.address}</p>
-                                  <p className="text-xs">{agencySettings.contactInfo}</p>
+                                  <h3 className="font-bold text-sm uppercase">{agencySettings.name}</h3>
+                                  <h1 className="font-bold text-lg uppercase">{agencySettings.department}</h1>
+                                  <p className="text-[10px]">{agencySettings.address}</p>
                                </div>
                             </div>
-                            <div className="flex justify-end mb-4">
-                               <table className="text-xs text-black"><tbody><tr><td>Nomor</td><td>: {printingSppd.id}</td></tr></tbody></table>
+
+                            <div className="flex justify-end mb-2 text-[10px]">
+                               <table><tbody>
+                                   <tr><td>Lembar ke</td><td>:</td><td>.....................</td></tr>
+                                   <tr><td>Kode No</td><td>:</td><td>.....................</td></tr>
+                                   <tr><td>Nomor</td><td>:</td><td>{printingSppd.id}</td></tr>
+                               </tbody></table>
                             </div>
-                            <div className="text-center mb-4"><h3 className="text-md font-bold underline uppercase">SURAT PERINTAH PERJALANAN DINAS</h3></div>
+
+                            <div className="text-center mb-4">
+                                <h2 className="font-bold text-sm underline uppercase">SURAT PERINTAH PERJALANAN DINAS</h2>
+                                <p className="text-[10px]">(SPPD)</p>
+                            </div>
                             
-                            <table className="w-full border-collapse border border-black mb-4 text-black">
+                            <table className="w-full border-collapse border border-black mb-4">
                                <tbody>
-                                  <tr><td className="border border-black p-1 text-center w-8">1</td><td className="border border-black p-1 w-[40%]">Pejabat Berwenang</td><td className="border border-black p-1">{signatory?.role}</td></tr>
-                                  <tr><td className="border border-black p-1 text-center">2</td><td className="border border-black p-1">Nama Pegawai</td><td className="border border-black p-1">{emp?.name}<br/>NIP. {emp?.nip}</td></tr>
-                                  {/* ... Other rows ... */}
-                                  <tr><td className="border border-black p-1 text-center">4</td><td className="border border-black p-1">Maksud Perjalanan</td><td className="border border-black p-1">{taskObj?.subject}</td></tr>
-                                  <tr><td className="border border-black p-1 text-center">5</td><td className="border border-black p-1">Angkutan</td><td className="border border-black p-1">{trans?.type}</td></tr>
-                                  <tr><td className="border border-black p-1 text-center">6</td><td className="border border-black p-1">Tempat Tujuan</td><td className="border border-black p-1">{dest?.name}</td></tr>
-                                  <tr><td className="border border-black p-1 text-center">7</td><td className="border border-black p-1">Lama Perjalanan</td><td className="border border-black p-1">{taskObj?.duration} hari<br/>{formatDateIndo(printingSppd.startDate)} s/d {formatDateIndo(printingSppd.endDate)}</td></tr>
                                   <tr>
-                                      <td className="border border-black p-1 text-center">8</td>
-                                      <td className="border border-black p-1">Pengikut</td>
-                                      <td className="border border-black p-0">
-                                          {followers.map((f, i) => <div key={i} className="p-1 border-b border-black last:border-0">{i+1}. {f?.name}</div>)}
-                                          {followers.length === 0 && <div className="p-1">-</div>}
+                                      <td className={`${commonBorder} text-center w-8`}>1.</td>
+                                      <td className={`${commonBorder} w-[40%]`}>Pejabat Berwenang yang memberi Perintah</td>
+                                      <td className={commonBorder}>{signatory?.role}</td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>2.</td>
+                                      <td className={commonBorder}>Nama Pegawai yang diperintah</td>
+                                      <td className={commonBorder}>{emp?.name}</td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>3.</td>
+                                      <td className={commonBorder}>
+                                          a. Pangkat dan Golongan menurut ruang gaji<br/>
+                                          b. Jabatan / Instansi<br/>
+                                          c. Tingkat Biaya Perjalanan Dinas
+                                      </td>
+                                      <td className={commonBorder}>
+                                          a. {emp?.grade}<br/>
+                                          b. {emp?.position}<br/>
+                                          c. ....................................................
                                       </td>
                                   </tr>
-                                  <tr><td className="border border-black p-1 text-center">9</td><td className="border border-black p-1">Anggaran</td><td className="border border-black p-1">{fund?.code}</td></tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>4.</td>
+                                      <td className={commonBorder}>Maksud Perjalanan Dinas</td>
+                                      <td className={commonBorder}>{taskObj?.subject}</td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>5.</td>
+                                      <td className={commonBorder}>Alat angkutan yang dipergunakan</td>
+                                      <td className={commonBorder}>{trans?.type}</td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>6.</td>
+                                      <td className={commonBorder}>
+                                          a. Tempat Berangkat<br/>
+                                          b. Tempat Tujuan
+                                      </td>
+                                      <td className={commonBorder}>
+                                          a. Kabupaten Demak<br/>
+                                          b. {dest?.name}
+                                      </td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>7.</td>
+                                      <td className={commonBorder}>
+                                          a. Lamanya Perjalanan Dinas<br/>
+                                          b. Tanggal Berangkat<br/>
+                                          c. Tanggal Harus Kembali / Tiba di Tempat Baru *)
+                                      </td>
+                                      <td className={commonBorder}>
+                                          a. {taskObj?.duration} hari<br/>
+                                          b. {formatDateIndo(printingSppd.startDate)}<br/>
+                                          c. {formatDateIndo(printingSppd.endDate)}
+                                      </td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>8.</td>
+                                      <td className={commonBorder}>Pengikut : Nama</td>
+                                      <td className={commonBorder}>
+                                          {followers.length > 0 ? (
+                                              <ul className="list-decimal list-inside m-0 p-0">
+                                                  {followers.map((f, i) => <li key={i}>{f?.name}</li>)}
+                                              </ul>
+                                          ) : <span>-</span>}
+                                      </td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>9.</td>
+                                      <td className={commonBorder}>
+                                          Pembebanan Anggaran<br/>
+                                          a. Instansi<br/>
+                                          b. Mata Anggaran
+                                      </td>
+                                      <td className={commonBorder}>
+                                          <br/>
+                                          a. {agencySettings.department}<br/>
+                                          b. {fund?.code}
+                                      </td>
+                                  </tr>
+                                  <tr>
+                                      <td className={`${commonBorder} text-center`}>10.</td>
+                                      <td className={commonBorder}>Keterangan Lain-lain</td>
+                                      <td className={commonBorder}></td>
+                                  </tr>
                                </tbody>
                             </table>
-                            {renderSignature()}
-                            
-                            {/* Force Page Break for Visum */}
+
+                            <div className="flex justify-end mt-4">
+                               <div className="w-[45%]">
+                                  <p>Dikeluarkan di : Demak</p>
+                                  <p className="mb-2">Pada tanggal : {formatDateIndo(printingSppd.startDate)}</p>
+                                  
+                                  <div className="mt-4">
+                                      <p className="font-bold">{signatory?.role}</p>
+                                      <div className="h-16"></div>
+                                      <p className="font-bold underline">{signatoryEmp?.name}</p>
+                                      <p>NIP. {signatoryEmp?.nip}</p>
+                                  </div>
+                               </div>
+                            </div>
+
+                            {/* PAGE BREAK & VISUM */}
                             <div className="page-break"></div>
-                            <div className="mt-8 border border-black text-black">
-                                {/* Back side logic (Visum) - Simplified for brevity */}
-                                <div className="p-2 text-center font-bold">CATATAN DAN VISUM</div>
+                            
+                            <div className="mt-8">
+                                {/* Row 1 */}
                                 <div className="grid grid-cols-2">
-                                   <div className="border-t border-r border-black p-2 min-h-[100px]"></div>
-                                   <div className="border-t border-black p-2 min-h-[100px]">
-                                      <p>Berangkat dari: Demak</p>
-                                      <p>Tanggal: {formatDateIndo(printingSppd.startDate)}</p>
-                                      <p>Ke: {dest?.name}</p>
-                                   </div>
+                                    <div className="p-2 border-r border-black"></div>
+                                    <div className="p-2">
+                                        <p>Berangkat dari : Kabupaten Demak</p>
+                                        <p>Ke : {dest?.name}</p>
+                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
+                                        <div className="mt-4 text-center">
+                                            <p className="font-bold">{signatory?.role}</p>
+                                            <div className="h-16"></div>
+                                            <p className="font-bold underline">{signatoryEmp?.name}</p>
+                                            <p>NIP. {signatoryEmp?.nip}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Row 2 (Destinations) */}
+                                <div className="grid grid-cols-2 border-t border-black">
+                                    <div className="p-2 border-r border-black min-h-[150px]">
+                                        <p>II. Tiba di : {dest?.name}</p>
+                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
+                                        <p className="mt-8 text-center text-[10px]">(Tanda Tangan Pejabat Setempat)</p>
+                                    </div>
+                                    <div className="p-2 min-h-[150px]">
+                                        <p>Berangkat dari : {dest?.name}</p>
+                                        <p>Ke : Kabupaten Demak</p>
+                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
+                                        <p className="mt-8 text-center text-[10px]">(Tanda Tangan Pejabat Setempat)</p>
+                                    </div>
+                                </div>
+
+                                {/* Row 3 (Intermediate) */}
+                                <div className="grid grid-cols-2 border-t border-black">
+                                    <div className="p-2 border-r border-black min-h-[150px]">
+                                        <p>III. Tiba di : ......................</p>
+                                        <p>Pada Tanggal : ......................</p>
+                                    </div>
+                                    <div className="p-2 min-h-[150px]">
+                                        <p>Berangkat dari : ......................</p>
+                                        <p>Ke : ......................</p>
+                                        <p>Pada Tanggal : ......................</p>
+                                    </div>
+                                </div>
+
+                                {/* Row 4 (Return) */}
+                                <div className="grid grid-cols-2 border-t border-black">
+                                    <div className="p-2 border-r border-black min-h-[150px]">
+                                        <p>IV. Tiba di : Kabupaten Demak</p>
+                                        <p>(Tempat Kedudukan)</p>
+                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
+                                        <div className="mt-4 text-center">
+                                            <p className="font-bold">Pejabat Pelaksana Teknis Kegiatan</p>
+                                            <div className="h-12"></div>
+                                            <p className="font-bold underline">......................................</p>
+                                            <p>NIP. ......................................</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-2 min-h-[150px]">
+                                        <p>Telah diperiksa dengan keterangan bahwa perjalanan tersebut atas perintahnya dan semata-mata untuk kepentingan jabatan dalam waktu yang sesingkat-singkatnya.</p>
+                                        <div className="mt-4 text-center">
+                                            <p className="font-bold">{signatory?.role}</p>
+                                            <div className="h-12"></div>
+                                            <p className="font-bold underline">{signatoryEmp?.name}</p>
+                                            <p>NIP. {signatoryEmp?.nip}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Row 5 */}
+                                <div className="border-t border-b border-black p-2">
+                                    <p>V. Catatan Lain-lain</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="font-bold mb-2">VI. PERHATIAN :</p>
+                                    <p>Pejabat yang berwenang menerbitkan SPPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat / tiba, serta bendaharawan bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila negara menderita rugi akibat kesalahan, kelalaian, dan kealpaannya.</p>
                                 </div>
                             </div>
                         </div>
