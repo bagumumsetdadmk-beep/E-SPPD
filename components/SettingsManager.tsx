@@ -19,9 +19,45 @@ const SettingsManager: React.FC = () => {
     return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
   });
 
-  // DB Config State
-  const [dbConfig, setDbConfig] = useState({ url: '', key: '' });
-  const [isDbConnected, setIsDbConnected] = useState(false);
+  // Helper: Get Config Priority (LocalStorage -> Env Vars)
+  const getInitialDbConfig = () => {
+    // 1. Cek Local Storage (Manual Override)
+    const savedDb = localStorage.getItem('supabase_config');
+    if (savedDb) {
+      try {
+        const parsed = JSON.parse(savedDb);
+        if (parsed.url && parsed.key) return parsed;
+      } catch (e) {
+        console.error("Invalid config in localstorage");
+      }
+    }
+
+    // 2. Cek Environment Variables (Vercel/Vite)
+    try {
+        const meta = import.meta as any;
+        const envUrl = meta.env?.VITE_SUPABASE_URL;
+        const envKey = meta.env?.VITE_SUPABASE_KEY;
+        
+        if (envUrl && envKey) {
+            console.log("Loaded Supabase config from Environment Variables");
+            return { url: envUrl, key: envKey };
+        }
+    } catch (e) {
+        console.warn("Could not load env vars", e);
+    }
+
+    // 3. Default Kosong
+    return { url: '', key: '' };
+  };
+
+  // DB Config State - Initialize immediately!
+  const [dbConfig, setDbConfig] = useState<{url: string, key: string}>(getInitialDbConfig);
+  
+  // Connected State - Initialize based on config existence
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(() => {
+    const config = getInitialDbConfig();
+    return !!(config.url && config.key);
+  });
 
   const [previewLogo, setPreviewLogo] = useState<string>(settings.logoUrl);
   const [isSaved, setIsSaved] = useState(false);
@@ -33,40 +69,12 @@ const SettingsManager: React.FC = () => {
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [showStorageModal, setShowStorageModal] = useState(false);
 
-  // 1. Check Connection & Load Data
+  // 1. Load Data on Mount if Connected
   useEffect(() => {
-    const savedDb = localStorage.getItem('supabase_config');
-    
-    // INTEGRASI ENV VARS (Vercel/Vite)
-    // Menggunakan try-catch untuk mencegah crash jika import.meta tidak didukung
-    let envUrl = '';
-    let envKey = '';
-    
-    try {
-        // Safe access casting
-        const meta = import.meta as any;
-        if (meta && meta.env) {
-            envUrl = meta.env.VITE_SUPABASE_URL || '';
-            envKey = meta.env.VITE_SUPABASE_KEY || '';
-        }
-    } catch (e) {
-        console.warn('Environment variables could not be loaded via import.meta', e);
+    if (isDbConnected && dbConfig.url && dbConfig.key) {
+      fetchSettingsFromDb(dbConfig);
     }
-
-    if (savedDb) {
-      // Prioritas 1: Konfigurasi Manual yang tersimpan di LocalStorage
-      const config = JSON.parse(savedDb);
-      setDbConfig(config);
-      setIsDbConnected(true);
-      fetchSettingsFromDb(config);
-    } else if (envUrl && envKey) {
-      // Prioritas 2: Environment Variables dari Vercel/File .env
-      const config = { url: envUrl, key: envKey };
-      setDbConfig(config);
-      setIsDbConnected(true);
-      fetchSettingsFromDb(config);
-    }
-  }, []);
+  }, []); // Run once on mount
 
   const fetchSettingsFromDb = async (config: { url: string; key: string }) => {
       if (!config.url || !config.key) return;
@@ -97,6 +105,7 @@ const SettingsManager: React.FC = () => {
           }
       } catch (err) {
           console.error("Gagal mengambil data pengaturan:", err);
+          // Jangan disconnect jika error fetch, mungkin hanya tabel belum dibuat
       } finally {
           setIsLoadingData(false);
       }
@@ -181,9 +190,10 @@ const SettingsManager: React.FC = () => {
   const handleDisconnectDb = () => {
       if(confirm('Apakah Anda yakin ingin memutuskan koneksi? Data akan kembali disimpan secara lokal (offline) di browser.')) {
           localStorage.removeItem('supabase_config');
+          // Jangan reset dbConfig sepenuhnya jika berasal dari ENV, 
+          // tapi user minta disconnect manual, jadi kita kosongkan state saja.
           setDbConfig({ url: '', key: '' });
           setIsDbConnected(false);
-          // Note: Jika Env Vars ada, refresh halaman mungkin akan menghubungkan kembali secara otomatis.
       }
   };
 
