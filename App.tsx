@@ -89,7 +89,7 @@ const App: React.FC = () => {
     { to: '/dana', icon: Wallet, label: 'Sumber Dana' },
     { to: '/surat-tugas', icon: FileText, label: 'Surat Tugas' },
     { to: '/sppd', icon: ClipboardList, label: 'SPPD' },
-    { to: '/kwitansi', icon: ReceiptIcon, label: 'Kwitansi' },
+    { to: '/kwitansi', icon: ReceiptIcon, label: 'Rincian Biaya' }, // Changed Label
     // Laporan Perjalanan removed
     { to: '/rekap', icon: BarChart3, label: 'Rekap Data' },
     { to: '/pengaturan', icon: Settings, label: 'Pengaturan' },

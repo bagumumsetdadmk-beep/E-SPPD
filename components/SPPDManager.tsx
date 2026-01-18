@@ -436,7 +436,7 @@ const SPPDManager: React.FC = () => {
                         <button 
                              onClick={() => handleGoToReceipt(s.id)}
                              className="p-1.5 bg-emerald-100 text-emerald-600 hover:bg-emerald-200 rounded-lg transition-colors"
-                             title="Buat Kwitansi / Pembayaran"
+                             title="Buat Rincian Biaya"
                             >
                              <DollarSign size={16} />
                         </button>
@@ -562,7 +562,7 @@ const SPPDManager: React.FC = () => {
         </div>
       )}
 
-      {/* PRINT MODAL (COMPLETELY REDESIGNED) */}
+      {/* PRINT MODAL */}
       {isPrintModalOpen && printingSppd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
           <div className="bg-white rounded-2xl w-full max-w-[210mm] shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 print:shadow-none print:m-0 print:w-full print:max-h-none print:h-auto">
@@ -579,6 +579,7 @@ const SPPDManager: React.FC = () => {
 
             <div className="overflow-y-auto flex-1 custom-scrollbar">
               <div id="print-area" className="bg-white text-black p-[15mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000', fontSize: '11pt' }}>
+                {/* Print content remains the same */}
                 {(() => {
                     const details = getTaskDetails(printingSppd.assignmentId);
                     if (!details.taskObj) return <div className="p-10 text-center text-red-500">Data tidak ditemukan</div>;
