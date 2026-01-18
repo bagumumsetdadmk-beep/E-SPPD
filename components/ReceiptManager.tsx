@@ -342,8 +342,8 @@ const ReceiptManager: React.FC = () => {
   };
 
   const renderMoneyInput = (section: keyof Receipt, label: string) => {
-    // @ts-ignore
-    const item = formData[section] || { amount: 0, description: '', visible: false };
+    // Cast to any to safely access properties that might not exist on all Receipt keys
+    const item = (formData[section] as any) || { amount: 0, description: '', visible: false };
 
     return (
       <div className={`p-4 border rounded-xl transition-all ${item.visible ? 'bg-white border-indigo-200 shadow-sm' : 'bg-slate-50 border-slate-200 opacity-60'}`}>

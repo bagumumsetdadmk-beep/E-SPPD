@@ -36,8 +36,21 @@ const SettingsManager: React.FC = () => {
   // 1. Check Connection & Load Data
   useEffect(() => {
     const savedDb = localStorage.getItem('supabase_config');
+    
+    // INTEGRASI ENV VARS (Vercel/Vite)
+    // Membaca variable VITE_SUPABASE_URL dan VITE_SUPABASE_KEY secara otomatis
+    const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+    const envKey = (import.meta as any).env?.VITE_SUPABASE_KEY;
+
     if (savedDb) {
+      // Prioritas 1: Konfigurasi Manual yang tersimpan di LocalStorage
       const config = JSON.parse(savedDb);
+      setDbConfig(config);
+      setIsDbConnected(true);
+      fetchSettingsFromDb(config);
+    } else if (envUrl && envKey) {
+      // Prioritas 2: Environment Variables dari Vercel/File .env
+      const config = { url: envUrl, key: envKey };
       setDbConfig(config);
       setIsDbConnected(true);
       fetchSettingsFromDb(config);
@@ -159,6 +172,7 @@ const SettingsManager: React.FC = () => {
           localStorage.removeItem('supabase_config');
           setDbConfig({ url: '', key: '' });
           setIsDbConnected(false);
+          // Note: Jika Env Vars ada, refresh halaman mungkin akan menghubungkan kembali secara otomatis.
       }
   };
 
