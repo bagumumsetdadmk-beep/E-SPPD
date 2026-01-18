@@ -15,7 +15,8 @@ import {
   User, 
   MapPin, 
   Printer, 
-  DollarSign 
+  DollarSign,
+  RefreshCw
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory, AgencySettings } from '../types';
@@ -43,6 +44,7 @@ const SPPDManager: React.FC = () => {
 
   // SPPD State
   const [sppds, setSppds] = useState<SPPD[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -99,6 +101,11 @@ const SPPDManager: React.FC = () => {
 
   // Load Data
   useEffect(() => {
+    loadLocalData();
+    fetchData();
+  }, []);
+
+  const loadLocalData = () => {
     const empData = localStorage.getItem('employees');
     const cityData = localStorage.getItem('cities');
     const taskData = localStorage.getItem('assignment_tasks_v2');
@@ -106,6 +113,7 @@ const SPPDManager: React.FC = () => {
     const fundData = localStorage.getItem('funding_sources');
     const sigData = localStorage.getItem('signatories');
     const settingsData = localStorage.getItem('agency_settings');
+    const sppdData = localStorage.getItem('sppd_data');
 
     setEmployees(empData ? JSON.parse(empData) : []);
     setCities(cityData ? JSON.parse(cityData) : []);
@@ -113,22 +121,23 @@ const SPPDManager: React.FC = () => {
     setTransportModes(transData ? JSON.parse(transData) : []);
     setFundingSources(fundData ? JSON.parse(fundData) : []);
     setSignatories(sigData ? JSON.parse(sigData) : []);
+    setSppds(sppdData ? JSON.parse(sppdData) : []);
     if (settingsData) {
       setAgencySettings(JSON.parse(settingsData));
     }
+  };
 
-    fetchSPPDs();
-  }, []);
-
-  const fetchSPPDs = async () => {
+  const fetchData = async () => {
+    setIsLoading(true);
     const client = getSupabase();
     
     if (client) {
       try {
-        const { data, error } = await client.from('sppds').select('*').order('created_at', { ascending: false });
-        if (error) throw error;
-        if (data) {
-           const mappedData: SPPD[] = data.map((item: any) => ({
+        // 1. Fetch SPPDs
+        const { data: sppdData, error: sppdError } = await client.from('sppds').select('*').order('created_at', { ascending: false });
+        if (sppdError) throw sppdError;
+        if (sppdData) {
+           const mappedSppds: SPPD[] = sppdData.map((item: any) => ({
              id: item.id,
              assignmentId: item.assignment_id,
              startDate: item.start_date,
@@ -137,17 +146,38 @@ const SPPDManager: React.FC = () => {
              transportId: item.transport_id,
              fundingId: item.funding_id
            }));
-           setSppds(mappedData);
-           return;
+           setSppds(mappedSppds);
         }
+
+        // 2. Fetch Assignments (To check status 'Approved')
+        const { data: taskData, error: taskError } = await client.from('assignment_letters').select('*').order('created_at', { ascending: false });
+        if (taskData) {
+            const mappedTasks: AssignmentLetter[] = taskData.map((item: any) => ({
+                id: item.id,
+                number: item.number,
+                date: item.date,
+                basis: item.basis,
+                employeeIds: item.employee_ids || [], 
+                subject: item.subject,
+                destinationId: item.destination_id,
+                destinationAddress: item.destination_address,
+                startDate: item.start_date,
+                endDate: item.end_date,
+                duration: item.duration,
+                signatoryId: item.signatory_id,
+                status: item.status,
+                signatureType: item.signature_type,
+                upperTitle: item.upper_title,
+                intermediateTitle: item.intermediate_title
+            }));
+            setAssignments(mappedTasks);
+        }
+
       } catch (e) {
         console.error("DB Fetch Error:", e);
       }
     }
-
-    // Fallback
-    const saved = localStorage.getItem('sppd_data');
-    setSppds(saved ? JSON.parse(saved) : []);
+    setIsLoading(false);
   };
 
   const syncToLocalStorage = (data: SPPD[]) => {
@@ -245,7 +275,7 @@ const SPPDManager: React.FC = () => {
         const { error } = await client.from('sppds').upsert(dbPayload);
         if(error) {
           alert("Gagal simpan DB: " + error.message);
-          fetchSPPDs();
+          fetchData();
         }
       } catch(e) { console.error(e); }
     }
@@ -338,6 +368,11 @@ const SPPDManager: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Penerbitan SPPD</h1>
           <p className="text-slate-500">Kelola penerbitan dokumen SPPD berdasarkan Surat Tugas yang disetujui.</p>
+        </div>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchData} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
         </div>
       </div>
 

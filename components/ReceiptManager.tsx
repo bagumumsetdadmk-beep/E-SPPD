@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -209,13 +208,13 @@ const ReceiptManager: React.FC = () => {
       setFormData({
         ...INITIAL_RECEIPT_STATE,
         ...receipt,
-        dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...receipt.dailyAllowance },
-        transport: { ...INITIAL_RECEIPT_STATE.transport, ...receipt.transport },
-        accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...receipt.accommodation },
-        fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...receipt.fuel },
-        toll: { ...INITIAL_RECEIPT_STATE.toll, ...receipt.toll },
-        representation: { ...INITIAL_RECEIPT_STATE.representation, ...receipt.representation },
-        other: { ...INITIAL_RECEIPT_STATE.other, ...receipt.other },
+        dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...(receipt.dailyAllowance || {}) },
+        transport: { ...INITIAL_RECEIPT_STATE.transport, ...(receipt.transport || {}) },
+        accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...(receipt.accommodation || {}) },
+        fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...(receipt.fuel || {}) },
+        toll: { ...INITIAL_RECEIPT_STATE.toll, ...(receipt.toll || {}) },
+        representation: { ...INITIAL_RECEIPT_STATE.representation, ...(receipt.representation || {}) },
+        other: { ...INITIAL_RECEIPT_STATE.other, ...(receipt.other || {}) },
       });
     } else {
       setEditingReceipt(null);
