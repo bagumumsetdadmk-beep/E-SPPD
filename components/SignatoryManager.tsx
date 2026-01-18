@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, UserCheck, Trash2, Edit2, Search, X, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Employee, Signatory } from '../types';
+import ConfirmationModal from './ConfirmationModal';
 
 const SignatoryManager: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>(() => {
@@ -17,6 +18,10 @@ const SignatoryManager: React.FC = () => {
   const [editingSignatory, setEditingSignatory] = useState<Signatory | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [role, setRole] = useState('');
+
+  // Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   // 1. Helper Koneksi Supabase
   const getSupabase = () => {
@@ -143,18 +148,24 @@ const SignatoryManager: React.FC = () => {
     }
   };
 
-  const removeSignatory = async (id: string) => {
-    if (confirm('Hapus pejabat ini?')) {
-      const updatedList = signatories.filter(s => s.id !== id);
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (itemToDelete) {
+      const updatedList = signatories.filter(s => s.id !== itemToDelete);
       setSignatories(updatedList);
       syncToLocalStorage(updatedList);
 
       const client = getSupabase();
       if(client) {
           try {
-              await client.from('signatories').delete().eq('id', id);
+              await client.from('signatories').delete().eq('id', itemToDelete);
           } catch(e) { console.error(e); }
       }
+      setItemToDelete(null);
     }
   };
 
@@ -190,7 +201,7 @@ const SignatoryManager: React.FC = () => {
                 </div>
                 <div className="flex space-x-1">
                   <button onClick={() => handleOpenModal(sig)} className="p-2 text-slate-400 hover:text-indigo-600"><Edit2 size={16}/></button>
-                  <button onClick={() => removeSignatory(sig.id)} className="p-2 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
+                  <button onClick={() => requestDelete(sig.id)} className="p-2 text-slate-400 hover:text-rose-600"><Trash2 size={16}/></button>
                 </div>
               </div>
               <div>
@@ -210,6 +221,16 @@ const SignatoryManager: React.FC = () => {
             </div>
         )}
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Pejabat"
+        message="Apakah Anda yakin ingin menghapus pejabat penandatangan ini?"
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
@@ -243,15 +264,14 @@ const SignatoryManager: React.FC = () => {
                 >
                   <option value="">-- Pilih Peran --</option>
                   <optgroup label="Umum">
-                    <option value="Kepala Dinas">Kepala Dinas</option>
                     <option value="Sekretaris Daerah">Sekretaris Daerah</option>
-                    <option value="Atasan Langsung">Atasan Langsung</option>
+                    <option value="Asisten Administrasi Umum">Asisten Administrasi Umum</option>
+                    <option value="Kepala Bagian Umum">Kepala Bagian Umum</option>
                   </optgroup>
-                  <optgroup label="Keuangan & Kegiatan">
+                  <optgroup label="Keuangan/Kegiatan">
                     <option value="Kuasa Pengguna Anggaran (KPA)">Kuasa Pengguna Anggaran (KPA)</option>
-                    <option value="Pejabat Pembuat Komitmen (PPK)">Pejabat Pembuat Komitmen (PPK)</option>
                     <option value="Pejabat Pelaksana Teknis Kegiatan (PPTK)">Pejabat Pelaksana Teknis Kegiatan (PPTK)</option>
-                    <option value="Bendahara Pengeluaran">Bendahara Pengeluaran</option>
+                    <option value="Bendahara">Bendahara</option>
                   </optgroup>
                 </select>
               </div>

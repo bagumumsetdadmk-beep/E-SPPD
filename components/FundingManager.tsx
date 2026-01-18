@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Wallet, Landmark, PieChart, Plus, X, Trash2, Edit2, TrendingUp, RefreshCw } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { FundingSource } from '../types';
+import ConfirmationModal from './ConfirmationModal';
 
 const INITIAL_SOURCES: FundingSource[] = [
   { id: '1', code: 'DIPA-001', name: 'APBN Operasional Kantor', budgetYear: '2024', amount: 1500000000 },
@@ -20,6 +21,10 @@ const FundingManager: React.FC = () => {
     budgetYear: '2024',
     amount: 0
   });
+
+  // Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const getSupabase = () => {
     const env = (import.meta as any).env;
@@ -142,18 +147,24 @@ const FundingManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus sumber dana ini?')) {
-      const updatedList = sources.filter(s => s.id !== id);
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (itemToDelete) {
+      const updatedList = sources.filter(s => s.id !== itemToDelete);
       setSources(updatedList);
       syncToLocalStorage(updatedList);
 
       const client = getSupabase();
       if(client) {
           try {
-              await client.from('funding_sources').delete().eq('id', id);
+              await client.from('funding_sources').delete().eq('id', itemToDelete);
           } catch(e) { console.error(e); }
       }
+      setItemToDelete(null);
     }
   };
 
@@ -222,7 +233,7 @@ const FundingManager: React.FC = () => {
                     <Edit2 size={16} />
                   </button>
                   <button 
-                    onClick={() => handleDelete(s.id)} 
+                    onClick={() => requestDelete(s.id)} 
                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                   >
                     <Trash2 size={16} />
@@ -233,6 +244,16 @@ const FundingManager: React.FC = () => {
           </div>
         ))}
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Sumber Dana"
+        message="Apakah Anda yakin ingin menghapus sumber dana ini?"
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">

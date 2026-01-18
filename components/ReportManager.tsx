@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { FileText, CheckCircle, Clock, Plus, X, Trash2, Edit2 } from 'lucide-react';
+import ConfirmationModal from './ConfirmationModal';
 
 const ReportManager: React.FC = () => {
   const [reports, setReports] = useState(() => {
@@ -14,6 +15,10 @@ const ReportManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<any>(null);
   const [formData, setFormData] = useState({ id: '', subject: '', results: '', status: 'Completed' });
+
+  // Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('travel_reports', JSON.stringify(reports));
@@ -40,9 +45,15 @@ const ReportManager: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Hapus laporan ini?')) {
-      setReports(reports.filter((r: any) => r.id !== id));
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      setReports(reports.filter((r: any) => r.id !== itemToDelete));
+      setItemToDelete(null);
     }
   };
 
@@ -79,7 +90,7 @@ const ReportManager: React.FC = () => {
                 </div>
                 <div className="flex space-x-1">
                   <button onClick={() => handleOpenModal(report)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded"><Edit2 size={16} /></button>
-                  <button onClick={() => handleDelete(report.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={16} /></button>
+                  <button onClick={() => requestDelete(report.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={16} /></button>
                 </div>
               </div>
               <p className="text-sm text-slate-500 line-clamp-3">
@@ -99,6 +110,16 @@ const ReportManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Laporan"
+        message="Apakah Anda yakin ingin menghapus laporan ini?"
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">

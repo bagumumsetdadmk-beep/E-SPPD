@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Bus, Plane, Train, Car, Plus, Settings, X, Trash2, Edit2, RefreshCw } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { TransportMode } from '../types';
+import ConfirmationModal from './ConfirmationModal';
 
 const INITIAL_MODES: TransportMode[] = [
   { id: '1', type: 'Pesawat Terbang', description: 'Perjalanan antar pulau / jarak jauh' },
@@ -22,6 +23,10 @@ const TransportManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMode, setEditingMode] = useState<TransportMode | null>(null);
   const [formData, setFormData] = useState({ type: '', description: '' });
+
+  // Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const getSupabase = () => {
     const env = (import.meta as any).env;
@@ -100,18 +105,24 @@ const TransportManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Hapus moda transportasi ini?')) {
-      const updatedList = modes.filter(m => m.id !== id);
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (itemToDelete) {
+      const updatedList = modes.filter(m => m.id !== itemToDelete);
       setModes(updatedList);
       syncToLocalStorage(updatedList);
 
       const client = getSupabase();
       if(client) {
           try {
-              await client.from('transport_modes').delete().eq('id', id);
+              await client.from('transport_modes').delete().eq('id', itemToDelete);
           } catch(e) { console.error(e); }
       }
+      setItemToDelete(null);
     }
   };
 
@@ -150,12 +161,22 @@ const TransportManager: React.FC = () => {
               </div>
               <div className="flex flex-col space-y-1">
                 <button onClick={() => handleOpenModal(m)} className="p-2 text-slate-300 hover:text-indigo-600"><Edit2 size={18}/></button>
-                <button onClick={() => handleDelete(m.id)} className="p-2 text-slate-300 hover:text-rose-600"><Trash2 size={18}/></button>
+                <button onClick={() => requestDelete(m.id)} className="p-2 text-slate-300 hover:text-rose-600"><Trash2 size={18}/></button>
               </div>
             </div>
           );
         })}
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Moda"
+        message="Apakah Anda yakin ingin menghapus moda transportasi ini?"
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">

@@ -95,6 +95,10 @@ const ReceiptManager: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
+  // Verification Confirm Modal
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [verifyMessage, setVerifyMessage] = useState("");
+
   // Form State
   const [formData, setFormData] = useState<Receipt>(INITIAL_RECEIPT_STATE);
 
@@ -250,23 +254,18 @@ const ReceiptManager: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const handleVerifyPayment = () => {
+  // Step 1: Request Verification (Trigger Modal)
+  const requestVerifyPayment = () => {
     if (!formData.sppdId) {
       alert("SPPD belum dipilih!");
       return;
     }
 
     const safeTotal = Number(formData.totalAmount) || 0;
-
-    if (safeTotal === 0) {
-      if(!confirm("Total biaya tercatat Rp 0. Apakah Anda yakin tidak ada pengeluaran dalam perjalanan ini?")) {
-        return; 
-      }
-    }
-
     const sppd = sppds.find(s => s.id === formData.sppdId);
+    
     if (!sppd) {
-      alert("Data SPPD tidak ditemukan di database!");
+      alert("Data SPPD tidak ditemukan!");
       return;
     }
 
@@ -286,15 +285,21 @@ const ReceiptManager: React.FC = () => {
       return;
     }
 
-    const confirmMsg = safeTotal > 0 
+    const msg = safeTotal > 0 
         ? `Konfirmasi Pembayaran:\n\nTotal: Rp ${safeTotal.toLocaleString()}\nSumber Dana: ${source.name}\n\nSaldo akan dikurangi secara otomatis. Lanjutkan?`
         : `Konfirmasi Verifikasi:\n\nTotal Biaya: Rp 0\nStatus akan diubah menjadi Selesai. Lanjutkan?`;
+    
+    setVerifyMessage(msg);
+    setIsVerifyModalOpen(true);
+  };
 
-    if (!confirm(confirmMsg)) {
-      return;
-    }
+  // Step 2: Confirm Verification (Execute Action)
+  const confirmVerifyPayment = () => {
+    const safeTotal = Number(formData.totalAmount) || 0;
+    const sppd = sppds.find(s => s.id === formData.sppdId);
+    const source = fundingSources.find(f => f.id === sppd?.fundingId);
 
-    if (safeTotal > 0) {
+    if (source && safeTotal > 0) {
         const updatedSources = fundingSources.map(s => 
           s.id === source.id ? { ...s, amount: s.amount - safeTotal } : s
         );
@@ -302,11 +307,13 @@ const ReceiptManager: React.FC = () => {
         localStorage.setItem('funding_sources', JSON.stringify(updatedSources));
     }
 
-    const updatedSppds = sppds.map(s => 
-      s.id === sppd.id ? { ...s, status: 'Selesai' as const } : s
-    );
-    setSppds(updatedSppds);
-    localStorage.setItem('sppd_data', JSON.stringify(updatedSppds));
+    if (sppd) {
+        const updatedSppds = sppds.map(s => 
+          s.id === sppd.id ? { ...s, status: 'Selesai' as const } : s
+        );
+        setSppds(updatedSppds);
+        localStorage.setItem('sppd_data', JSON.stringify(updatedSppds));
+    }
 
     const paidReceipt: Receipt = { 
         ...formData, 
@@ -321,8 +328,8 @@ const ReceiptManager: React.FC = () => {
     }
 
     setIsModalOpen(false);
-    alert("Pembayaran/Verifikasi berhasil.");
   };
+
 
   const requestDelete = (id: string) => {
     setItemToDelete(id);
@@ -482,6 +489,17 @@ const ReceiptManager: React.FC = () => {
         title="Hapus Kwitansi"
         message="Apakah Anda yakin ingin menghapus kwitansi ini?"
         confirmText="Ya, Hapus"
+        isDanger={true}
+      />
+
+      <ConfirmationModal
+        isOpen={isVerifyModalOpen}
+        onClose={() => setIsVerifyModalOpen(false)}
+        onConfirm={confirmVerifyPayment}
+        title="Konfirmasi Pembayaran"
+        message={verifyMessage}
+        confirmText="Proses Bayar"
+        isDanger={false}
       />
 
       {/* INPUT MODAL */}
@@ -618,7 +636,7 @@ const ReceiptManager: React.FC = () => {
                   {formData.status !== 'Paid' ? (
                     <>
                        <button type="button" onClick={() => handleSave()} className="flex-1 px-4 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-xl hover:bg-slate-50">Simpan Draft</button>
-                       <button type="button" onClick={handleVerifyPayment} className="flex-1 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 flex items-center justify-center space-x-2">
+                       <button type="button" onClick={requestVerifyPayment} className="flex-1 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 flex items-center justify-center space-x-2">
                          <Check size={18} />
                          <span>Bayar & Verifikasi</span>
                        </button>

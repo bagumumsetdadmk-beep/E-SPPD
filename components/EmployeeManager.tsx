@@ -1,12 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Filter, MoreVertical, Download, X, RefreshCw, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, Edit2, Trash2, Filter, MoreVertical, Download, X, RefreshCw, CheckCircle2, Upload, FileSpreadsheet } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Employee } from '../types';
+import ConfirmationModal from './ConfirmationModal';
 
 const INITIAL_EMPLOYEES: Employee[] = [
-  { id: '1', nip: '198801012015031001', name: 'Andi Pratama, S.T.', position: 'Kepala Bagian IT', grade: 'IV/a' },
-  { id: '2', nip: '199205122018012002', name: 'Siti Wahyuni, M.Ak.', position: 'Staf Keuangan', grade: 'III/c' },
+  { id: '1', nip: '198801012015031001', name: 'Andi Pratama, S.T.', position: 'Kepala Bagian IT', grade: 'Penata (III/c)' },
+  { id: '2', nip: '199205122018012002', name: 'Siti Wahyuni, M.Ak.', position: 'Staf Keuangan', grade: 'Penata Muda Tk.I (III/b)' },
 ];
 
 const EmployeeManager: React.FC = () => {
@@ -16,6 +17,13 @@ const EmployeeManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  
+  // Delete Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+
+  // Hidden File Input Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Form State
   const [formData, setFormData] = useState<Omit<Employee, 'id'>>({
@@ -117,23 +125,114 @@ const EmployeeManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
-      const updatedList = employees.filter(emp => emp.id !== id);
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (itemToDelete) {
+      const updatedList = employees.filter(emp => emp.id !== itemToDelete);
       setEmployees(updatedList);
       syncToLocalStorage(updatedList);
 
       const client = getSupabase();
       if (client) {
         try {
-           const { error } = await client.from('employees').delete().eq('id', id);
-           if (error) alert("Gagal menghapus dari Database: " + error.message);
+           const { error } = await client.from('employees').delete().eq('id', itemToDelete);
+           if (error) console.error("Gagal menghapus dari Database: " + error.message);
         } catch (e) {
            console.error("DB Delete Error:", e);
         }
       }
+      setItemToDelete(null);
     }
   };
+
+  // --- IMPORT / EXPORT LOGIC UPDATED ---
+
+  const handleDownloadTemplate = () => {
+      // Menggunakan delimiter titik koma (;) agar otomatis menjadi kolom di Excel format Indonesia
+      const headers = "NIP;Nama Lengkap;Jabatan;Pangkat/Golongan"; 
+      const sample = "199001012020011001;Budi Santoso;Staf Teknis;Penata Muda (III/a)";
+      
+      // Tambahkan BOM (\uFEFF) agar Excel membaca encoding UTF-8 dengan benar
+      const csvContent = "\uFEFF" + headers + "\n" + sample;
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", "template_pegawai.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => {
+      fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          const text = e.target?.result as string;
+          if (!text) return;
+
+          // Split baris (handle Windows CRLF dan Unix LF)
+          const rows = text.split(/\r?\n/).slice(1); // Skip header
+          const newEmployees: Employee[] = [];
+          
+          rows.forEach(row => {
+              if (!row.trim()) return; // Skip baris kosong
+              
+              // Split berdasarkan titik koma (;) sesuai template
+              // Clean up: hapus tanda kutip di awal/akhir jika excel menambahkannya
+              const cols = row.split(';').map(c => c.replace(/^"|"$/g, '').trim());
+              
+              if (cols.length >= 4) {
+                  const nip = cols[0];
+                  const name = cols[1];
+                  const position = cols[2];
+                  const grade = cols[3];
+                  
+                  if (nip && name) {
+                      newEmployees.push({
+                          id: Date.now().toString() + Math.floor(Math.random() * 1000),
+                          nip: nip.replace(/'/g, ''), // Remove excel single quote text helper
+                          name,
+                          position,
+                          grade
+                      });
+                  }
+              }
+          });
+
+          if (newEmployees.length > 0) {
+              const merged = [...employees, ...newEmployees];
+              setEmployees(merged);
+              syncToLocalStorage(merged);
+              
+              // Try Sync DB
+              const client = getSupabase();
+              if (client) {
+                  const { error } = await client.from('employees').upsert(newEmployees);
+                  if (error) alert("Warning: Data tersimpan lokal, tapi gagal sync DB: " + error.message);
+              }
+              alert(`Berhasil mengimpor ${newEmployees.length} pegawai.`);
+          } else {
+              alert("Tidak ada data valid. Pastikan file CSV menggunakan format kolom (pemisah titik koma/semicolon).");
+          }
+      };
+      reader.readAsText(file);
+      // Reset input
+      event.target.value = '';
+  };
+
 
   const filteredEmployees = employees.filter(e => 
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -151,10 +250,17 @@ const EmployeeManager: React.FC = () => {
           <button onClick={fetchEmployees} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Refresh Data">
              <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
           </button>
-          <button className="flex items-center space-x-2 px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
-            <Download size={18} />
-            <span className="font-medium text-sm">Ekspor Excel</span>
-          </button>
+          
+          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
+             <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-r border-slate-200 text-xs font-medium flex items-center" title="Download Template CSV (Excel)">
+                <FileSpreadsheet size={16} className="mr-1"/> Template
+             </button>
+             <button onClick={handleImportClick} className="px-3 py-2 text-indigo-600 hover:bg-indigo-50 text-xs font-medium flex items-center" title="Import CSV">
+                <Upload size={16} className="mr-1"/> Import
+             </button>
+             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          </div>
+
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
@@ -191,7 +297,7 @@ const EmployeeManager: React.FC = () => {
                 <th className="px-6 py-4">NIP</th>
                 <th className="px-6 py-4">Nama Lengkap</th>
                 <th className="px-6 py-4">Jabatan</th>
-                <th className="px-6 py-4">Golongan</th>
+                <th className="px-6 py-4">Pangkat/Golongan</th>
                 <th className="px-6 py-4 text-right">Aksi</th>
               </tr>
             </thead>
@@ -217,7 +323,7 @@ const EmployeeManager: React.FC = () => {
                         <Edit2 size={16} />
                       </button>
                       <button 
-                        onClick={() => handleDelete(emp.id)}
+                        onClick={() => requestDelete(emp.id)}
                         className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
                       >
                         <Trash2 size={16} />
@@ -233,6 +339,16 @@ const EmployeeManager: React.FC = () => {
           </table>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Data Pegawai"
+        message="Apakah Anda yakin ingin menghapus data pegawai ini? Tindakan ini tidak dapat dibatalkan."
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
@@ -272,12 +388,12 @@ const EmployeeManager: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Golongan</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Pangkat / Golongan</label>
                 <input 
                   type="text" required
                   value={formData.grade}
                   onChange={(e) => setFormData({...formData, grade: e.target.value})}
-                  placeholder="Contoh: IV/a"
+                  placeholder="Contoh: Pembina (IV/a)"
                   className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-black text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
                 />
               </div>

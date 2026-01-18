@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, Map, Trash2, Edit2, X, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { City } from '../types';
+import ConfirmationModal from './ConfirmationModal';
 
 const INITIAL_CITIES: City[] = [
   { id: '1', name: 'Jakarta', province: 'DKI Jakarta', dailyAllowance: 530000 },
@@ -15,6 +16,10 @@ const CityManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCity, setEditingCity] = useState<City | null>(null);
   const [formData, setFormData] = useState({ name: '', province: '', dailyAllowance: 0 });
+
+  // Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const getSupabase = () => {
     const env = (import.meta as any).env;
@@ -115,18 +120,24 @@ const CityManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Apakah Anda yakin ingin menghapus kota tujuan ini?')) {
-      const updatedList = cities.filter(c => c.id !== id);
+  const requestDelete = (id: string) => {
+    setItemToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (itemToDelete) {
+      const updatedList = cities.filter(c => c.id !== itemToDelete);
       setCities(updatedList);
       syncToLocalStorage(updatedList);
 
       const client = getSupabase();
       if(client) {
           try {
-              await client.from('cities').delete().eq('id', id);
+              await client.from('cities').delete().eq('id', itemToDelete);
           } catch(e) { console.error(e); }
       }
+      setItemToDelete(null);
     }
   };
 
@@ -166,7 +177,7 @@ const CityManager: React.FC = () => {
                   <Edit2 size={16} />
                 </button>
                 <button 
-                  onClick={() => handleDelete(city.id)}
+                  onClick={() => requestDelete(city.id)}
                   className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                 >
                   <Trash2 size={16} />
@@ -193,6 +204,16 @@ const CityManager: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Hapus Kota"
+        message="Apakah Anda yakin ingin menghapus kota tujuan ini?"
+        confirmText="Ya, Hapus"
+        isDanger={true}
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
