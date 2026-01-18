@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle, RefreshCw, CheckCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Receipt, SPPD, AssignmentLetter, Employee, City, Signatory, FundingSource, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
@@ -377,6 +377,32 @@ const ReceiptManager: React.FC = () => {
     }
   };
 
+  // NEW FUNCTION: Mark as Paid
+  const handleMarkAsPaid = async (receipt: Receipt) => {
+    // Confirmation
+    const confirmMsg = `Validasi pembayaran untuk: ${receipt.id}?\n\nTotal: Rp ${receipt.totalAmount.toLocaleString('id-ID')}\n\nStatus akan berubah menjadi LUNAS dan anggaran akan terpotong pada Dashboard.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const updatedReceipt: Receipt = { ...receipt, status: 'Paid' };
+
+    // 1. Optimistic Update State
+    setReceipts(prev => prev.map(r => r.id === receipt.id ? updatedReceipt : r));
+    
+    // 2. Update Local Storage
+    const allReceipts = JSON.parse(localStorage.getItem('receipt_data_v2') || '[]');
+    const updatedLocalStorage = allReceipts.map((r: any) => r.id === receipt.id ? { ...r, status: 'Paid' } : r);
+    localStorage.setItem('receipt_data_v2', JSON.stringify(updatedLocalStorage));
+
+    // 3. Update DB
+    const client = getSupabase();
+    if (client) {
+        try {
+            const { error } = await client.from('receipts').update({ status: 'Paid' }).eq('id', receipt.id);
+            if(error) alert("Gagal update status DB: " + error.message);
+        } catch(e) { console.error(e); }
+    }
+  };
+
   const requestDelete = (id: string) => {
     setItemToDelete(id);
     setIsDeleteModalOpen(true);
@@ -481,7 +507,7 @@ const ReceiptManager: React.FC = () => {
             return (
                 <div key={r.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-all relative">
                     <div className="flex justify-between items-start mb-4">
-                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                        <div className={`p-3 rounded-xl ${r.status === 'Paid' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-600'}`}>
                             <ReceiptIcon size={24} />
                         </div>
                         <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${r.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -497,10 +523,28 @@ const ReceiptManager: React.FC = () => {
                     </div>
                     <div className="pt-4 border-t flex items-center justify-between">
                         <p className="text-lg font-bold text-indigo-600">Rp {r.totalAmount.toLocaleString('id-ID')}</p>
+                        
                         <div className="flex space-x-1">
-                            <button onClick={() => handlePrint(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded"><Printer size={16}/></button>
-                            <button onClick={() => handleOpenModal(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded"><Edit2 size={16}/></button>
-                            <button onClick={() => requestDelete(r.id)} className="p-2 text-slate-400 hover:text-rose-600 rounded"><Trash2 size={16}/></button>
+                            {/* NEW BUTTON: Approve/Pay */}
+                            {r.status === 'Draft' && (
+                                <button 
+                                    onClick={() => handleMarkAsPaid(r)} 
+                                    className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded transition-colors" 
+                                    title="Validasi Pembayaran (Set Lunas)"
+                                >
+                                    <CheckCircle size={16}/>
+                                </button>
+                            )}
+
+                            <button onClick={() => handlePrint(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded" title="Cetak"><Printer size={16}/></button>
+                            
+                            {/* Only allow Edit/Delete if Draft */}
+                            {r.status === 'Draft' && (
+                                <>
+                                    <button onClick={() => handleOpenModal(r)} className="p-2 text-slate-400 hover:text-indigo-600 rounded" title="Edit"><Edit2 size={16}/></button>
+                                    <button onClick={() => requestDelete(r.id)} className="p-2 text-slate-400 hover:text-rose-600 rounded" title="Hapus"><Trash2 size={16}/></button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -511,6 +555,7 @@ const ReceiptManager: React.FC = () => {
         )}
       </div>
 
+      {/* Rest of the component (Modals and Logic) remains same but included in full below for context */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-hidden">
           <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh]">
