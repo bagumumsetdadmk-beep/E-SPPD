@@ -1,31 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { Wallet, Landmark, PieChart, Plus, X, Trash2, Edit2, TrendingUp } from 'lucide-react';
+import { Wallet, Landmark, PieChart, Plus, X, Trash2, Edit2, TrendingUp, RefreshCw } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { FundingSource } from '../types';
 
 const INITIAL_SOURCES: FundingSource[] = [
   { id: '1', code: 'DIPA-001', name: 'APBN Operasional Kantor', budgetYear: '2024', amount: 1500000000 },
-  { id: '2', code: 'PROJ-X', name: 'Hibah Penelitian Luar Negeri', budgetYear: '2024', amount: 750000000 },
-  { id: '3', code: 'DIPA-002', name: 'Anggaran Pengembangan SDM', budgetYear: '2024', amount: 500000000 },
 ];
 
 const FundingManager: React.FC = () => {
-  const [sources, setSources] = useState<FundingSource[]>(() => {
-    const saved = localStorage.getItem('funding_sources');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Ensure old data gets default amount if missing
-        return parsed.map((s: any) => ({
-          ...s,
-          amount: s.amount || 0
-        }));
-      } catch (e) {
-        return INITIAL_SOURCES;
-      }
-    }
-    return INITIAL_SOURCES;
-  });
+  const [sources, setSources] = useState<FundingSource[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<FundingSource | null>(null);
@@ -36,9 +21,64 @@ const FundingManager: React.FC = () => {
     amount: 0
   });
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
-    localStorage.setItem('funding_sources', JSON.stringify(sources));
-  }, [sources]);
+    fetchFunding();
+  }, []);
+
+  const fetchFunding = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    
+    if (client) {
+      try {
+        const { data, error } = await client.from('funding_sources').select('*');
+        if (error) throw error;
+        if (data) {
+           // MAPPING: DB (budget_year) -> App (budgetYear)
+           const mapped: FundingSource[] = data.map((item: any) => ({
+               id: item.id,
+               code: item.code,
+               name: item.name,
+               budgetYear: item.budget_year, // Mapping snake_case
+               amount: Number(item.amount)   // Ensure number
+           }));
+           setSources(mapped);
+           setIsLoading(false);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    // Offline Fallback
+    const saved = localStorage.getItem('funding_sources');
+    if (saved) {
+        setSources(JSON.parse(saved));
+    } else {
+        setSources(INITIAL_SOURCES);
+    }
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: FundingSource[]) => {
+    localStorage.setItem('funding_sources', JSON.stringify(data));
+  };
 
   const handleOpenModal = (source?: FundingSource) => {
     if (source) {
@@ -61,19 +101,59 @@ const FundingManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const client = getSupabase();
+    const newId = editingSource ? editingSource.id : Date.now().toString();
+
+    // UI Object
+    const newSource: FundingSource = { ...formData, id: newId };
+    
+    // DB Payload (Mapping snake_case)
+    const dbPayload = {
+        id: newId,
+        code: formData.code,
+        name: formData.name,
+        budget_year: formData.budgetYear, // Mapping to DB
+        amount: formData.amount
+    };
+
+    // Optimistic Update
+    let updatedList;
     if (editingSource) {
-      setSources(sources.map(s => s.id === editingSource.id ? { ...formData, id: s.id } : s));
+      updatedList = sources.map(s => s.id === editingSource.id ? newSource : s);
     } else {
-      setSources([...sources, { ...formData, id: Date.now().toString() }]);
+      updatedList = [...sources, newSource];
     }
+    setSources(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    // DB Insert/Update
+    if(client) {
+        try {
+            const { error } = await client.from('funding_sources').upsert(dbPayload);
+            if(error) {
+                alert("Gagal simpan DB: " + error.message);
+                fetchFunding();
+            }
+        } catch(e) { console.error(e); }
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Apakah Anda yakin ingin menghapus sumber dana ini?')) {
-      setSources(sources.filter(s => s.id !== id));
+      const updatedList = sources.filter(s => s.id !== id);
+      setSources(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('funding_sources').delete().eq('id', id);
+          } catch(e) { console.error(e); }
+      }
     }
   };
 
@@ -91,6 +171,9 @@ const FundingManager: React.FC = () => {
              <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Total Plafon Anggaran</p>
              <p className="text-lg font-bold text-indigo-600">Rp {totalAllBudget.toLocaleString('id-ID')}</p>
           </div>
+          <button onClick={fetchFunding} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+          </button>
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all font-medium"
@@ -135,14 +218,12 @@ const FundingManager: React.FC = () => {
                   <button 
                     onClick={() => handleOpenModal(s)} 
                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                    title="Edit Data"
                   >
                     <Edit2 size={16} />
                   </button>
                   <button 
                     onClick={() => handleDelete(s.id)} 
                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                    title="Hapus Data"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -151,19 +232,6 @@ const FundingManager: React.FC = () => {
             </div>
           </div>
         ))}
-        
-        {sources.length === 0 && (
-          <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
-            <Wallet className="mx-auto text-slate-200 mb-4" size={64} />
-            <p className="text-slate-500 font-medium">Belum ada data sumber dana yang terdaftar.</p>
-            <button 
-              onClick={() => handleOpenModal()}
-              className="mt-4 text-indigo-600 font-bold hover:underline"
-            >
-              Buat Alokasi Dana Pertama
-            </button>
-          </div>
-        )}
       </div>
 
       {isModalOpen && (

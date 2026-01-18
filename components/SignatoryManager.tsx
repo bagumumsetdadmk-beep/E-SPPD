@@ -1,31 +1,88 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, UserCheck, Trash2, Edit2, Search, X } from 'lucide-react';
+import { Plus, UserCheck, Trash2, Edit2, Search, X, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { Employee, Signatory } from '../types';
 
 const SignatoryManager: React.FC = () => {
-  const [employees] = useState<Employee[]>(() => {
+  const [employees, setEmployees] = useState<Employee[]>(() => {
     const saved = localStorage.getItem('employees');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [signatories, setSignatories] = useState<Signatory[]>(() => {
-    const saved = localStorage.getItem('signatories');
-    const initial = [
-      { id: 'sig-1', employeeId: '1', role: 'Kuasa Pengguna Anggaran (KPA)', isActive: true },
-      { id: 'sig-2', employeeId: '2', role: 'Pejabat Pembuat Komitmen (PPK)', isActive: true },
-    ];
-    return saved ? JSON.parse(saved) : initial;
-  });
+  const [signatories, setSignatories] = useState<Signatory[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSignatory, setEditingSignatory] = useState<Signatory | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [role, setRole] = useState('');
 
+  // 1. Helper Koneksi Supabase
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
-    localStorage.setItem('signatories', JSON.stringify(signatories));
-  }, [signatories]);
+    fetchSignatories();
+    // Refresh employees too to ensure names are up to date
+    const savedEmp = localStorage.getItem('employees');
+    if(savedEmp) setEmployees(JSON.parse(savedEmp));
+  }, []);
+
+  // 2. Fetch Data dengan Mapping (snake_case -> camelCase)
+  const fetchSignatories = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    
+    if (client) {
+      try {
+        const { data, error } = await client.from('signatories').select('*');
+        if (error) throw error;
+        if (data) {
+           // MAPPING PENTING: DB (employee_id) -> App (employeeId)
+           const mappedData: Signatory[] = data.map((item: any) => ({
+             id: item.id,
+             employeeId: item.employee_id, // Mapping field
+             role: item.role,
+             isActive: item.is_active      // Mapping field
+           }));
+           setSignatories(mappedData);
+           setIsLoading(false);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    // Fallback Offline
+    const saved = localStorage.getItem('signatories');
+    if (saved) {
+        setSignatories(JSON.parse(saved));
+    } else {
+        // Mock default if empty
+        setSignatories([
+            { id: 'sig-1', employeeId: '1', role: 'Kuasa Pengguna Anggaran (KPA)', isActive: true }
+        ]);
+    }
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: Signatory[]) => {
+    localStorage.setItem('signatories', JSON.stringify(data));
+  };
 
   const handleOpenModal = (sig?: Signatory) => {
     if (sig) {
@@ -40,27 +97,64 @@ const SignatoryManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeId || !role) return;
 
+    const client = getSupabase();
+    const newId = editingSignatory ? editingSignatory.id : `sig-${Date.now()}`;
+    
+    // Object untuk UI (camelCase)
+    const newSignatory: Signatory = {
+      id: newId,
+      employeeId: selectedEmployeeId,
+      role,
+      isActive: true,
+    };
+
+    // Object untuk DB (snake_case)
+    const dbPayload = {
+      id: newId,
+      employee_id: selectedEmployeeId, // Mapping ke DB
+      role: role,
+      is_active: true
+    };
+
+    // Optimistic Update
+    let updatedList;
     if (editingSignatory) {
-      setSignatories(signatories.map(s => s.id === editingSignatory.id ? { ...s, employeeId: selectedEmployeeId, role } : s));
+      updatedList = signatories.map(s => s.id === editingSignatory.id ? newSignatory : s);
     } else {
-      const newSignatory: Signatory = {
-        id: `sig-${Date.now()}`,
-        employeeId: selectedEmployeeId,
-        role,
-        isActive: true,
-      };
-      setSignatories([...signatories, newSignatory]);
+      updatedList = [...signatories, newSignatory];
     }
+    setSignatories(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    // DB Update
+    if (client) {
+        try {
+            const { error } = await client.from('signatories').upsert(dbPayload);
+            if (error) {
+                alert("Gagal menyimpan ke DB: " + error.message);
+                fetchSignatories();
+            }
+        } catch (e) { console.error(e); }
+    }
   };
 
-  const removeSignatory = (id: string) => {
+  const removeSignatory = async (id: string) => {
     if (confirm('Hapus pejabat ini?')) {
-      setSignatories(signatories.filter(s => s.id !== id));
+      const updatedList = signatories.filter(s => s.id !== id);
+      setSignatories(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('signatories').delete().eq('id', id);
+          } catch(e) { console.error(e); }
+      }
     }
   };
 
@@ -71,13 +165,18 @@ const SignatoryManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Pejabat Penandatangan</h1>
           <p className="text-slate-500">Tentukan pegawai yang berwenang menandatangani dokumen dinas.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
-        >
-          <Plus size={18} />
-          <span className="font-medium text-sm">Tambah Pejabat</span>
-        </button>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchSignatories} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            <button 
+            onClick={() => handleOpenModal()}
+            className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+            >
+            <Plus size={18} />
+            <span className="font-medium text-sm">Tambah Pejabat</span>
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -105,6 +204,11 @@ const SignatoryManager: React.FC = () => {
             </div>
           );
         })}
+        {signatories.length === 0 && (
+            <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-400">
+                Belum ada data pejabat.
+            </div>
+        )}
       </div>
 
       {isModalOpen && (
@@ -140,6 +244,7 @@ const SignatoryManager: React.FC = () => {
                   <option value="">-- Pilih Peran --</option>
                   <optgroup label="Umum">
                     <option value="Kepala Dinas">Kepala Dinas</option>
+                    <option value="Sekretaris Daerah">Sekretaris Daerah</option>
                     <option value="Atasan Langsung">Atasan Langsung</option>
                   </optgroup>
                   <optgroup label="Keuangan & Kegiatan">
