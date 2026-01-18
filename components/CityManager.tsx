@@ -1,28 +1,73 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Map, Trash2, Edit2, X, Wallet } from 'lucide-react';
+import { Plus, Search, Map, Trash2, Edit2, X, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { City } from '../types';
 
 const INITIAL_CITIES: City[] = [
   { id: '1', name: 'Jakarta', province: 'DKI Jakarta', dailyAllowance: 530000 },
-  { id: '2', name: 'Surabaya', province: 'Jawa Timur', dailyAllowance: 410000 },
-  { id: '3', name: 'Bandung', province: 'Jawa Barat', dailyAllowance: 430000 },
-  { id: '4', name: 'Medan', province: 'Sumatera Utara', dailyAllowance: 370000 },
-  { id: '5', name: 'Makassar', province: 'Sulawesi Selatan', dailyAllowance: 430000 },
 ];
 
 const CityManager: React.FC = () => {
-  const [cities, setCities] = useState<City[]>(() => {
-    const saved = localStorage.getItem('cities');
-    return saved ? JSON.parse(saved) : INITIAL_CITIES;
-  });
+  const [cities, setCities] = useState<City[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCity, setEditingCity] = useState<City | null>(null);
   const [formData, setFormData] = useState({ name: '', province: '', dailyAllowance: 0 });
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
-    localStorage.setItem('cities', JSON.stringify(cities));
-  }, [cities]);
+    fetchCities();
+  }, []);
+
+  const fetchCities = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    
+    if (client) {
+      try {
+        const { data, error } = await client.from('cities').select('*').order('name');
+        if (error) throw error;
+        if (data) {
+           // Map snake_case to camelCase if needed, but we used same names in SQL
+           const mapped = data.map(d => ({
+               id: d.id,
+               name: d.name,
+               province: d.province,
+               dailyAllowance: d.daily_allowance || d.dailyAllowance // Handle DB numeric
+           }));
+           setCities(mapped);
+           setIsLoading(false);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    const saved = localStorage.getItem('cities');
+    setCities(saved ? JSON.parse(saved) : INITIAL_CITIES);
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: City[]) => {
+    localStorage.setItem('cities', JSON.stringify(data));
+  };
 
   const handleOpenModal = (city?: City) => {
     if (city) {
@@ -35,19 +80,53 @@ const CityManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const client = getSupabase();
+    const newId = editingCity ? editingCity.id : Date.now().toString();
+    
+    const payload = { 
+        id: newId,
+        name: formData.name,
+        province: formData.province,
+        daily_allowance: formData.dailyAllowance // SQL column is snake_case
+    };
+
+    // Optimistic UI
+    const uiPayload = { ...formData, id: newId };
+    let updatedList;
     if (editingCity) {
-      setCities(cities.map(c => c.id === editingCity.id ? { ...formData, id: c.id } : c));
+      updatedList = cities.map(c => c.id === editingCity.id ? uiPayload : c);
     } else {
-      setCities([...cities, { ...formData, id: Date.now().toString() }]);
+      updatedList = [...cities, uiPayload];
     }
+    setCities(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    if (client) {
+        try {
+            const { error } = await client.from('cities').upsert(payload);
+            if(error) {
+                alert("Gagal simpan DB: " + error.message);
+                fetchCities();
+            }
+        } catch(e) { console.error(e); }
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Apakah Anda yakin ingin menghapus kota tujuan ini?')) {
-      setCities(cities.filter(c => c.id !== id));
+      const updatedList = cities.filter(c => c.id !== id);
+      setCities(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('cities').delete().eq('id', id);
+          } catch(e) { console.error(e); }
+      }
     }
   };
 
@@ -58,13 +137,18 @@ const CityManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Kota Tujuan</h1>
           <p className="text-slate-500">Daftar kota tujuan resmi beserta besaran uang harian.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
-        >
-          <Plus size={18} />
-          <span className="font-medium text-sm">Tambah Kota</span>
-        </button>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchCities} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            <button 
+              onClick={() => handleOpenModal()}
+              className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+            >
+              <Plus size={18} />
+              <span className="font-medium text-sm">Tambah Kota</span>
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

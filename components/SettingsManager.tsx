@@ -15,18 +15,14 @@ const INITIAL_SETTINGS: AgencySettings = {
 const SettingsManager: React.FC = () => {
   // 1. Logic Prioritas Config Database (Env Var > LocalStorage)
   const getInitialDbConfig = () => {
-    // A. Cek Environment Variables (Vite way)
-    // Menggunakan casting 'any' untuk keamanan TypeScript jika types belum digenerate
     const env = (import.meta as any).env;
     const envUrl = env?.VITE_SUPABASE_URL;
     const envKey = env?.VITE_SUPABASE_KEY;
 
     if (envUrl && envKey) {
-      // Jika ada Env Vars, return langsung. Jangan gunakan LocalStorage.
       return { url: envUrl, key: envKey, source: 'env' };
     }
 
-    // B. Jika Env Vars kosong, cek LocalStorage
     const savedDb = localStorage.getItem('supabase_config');
     if (savedDb) {
       try {
@@ -37,19 +33,15 @@ const SettingsManager: React.FC = () => {
       }
     }
 
-    // C. Default Kosong
     return { url: '', key: '', source: 'none' };
   };
 
-  // State Initialization
   const initialConfig = getInitialDbConfig();
   const [dbConfig, setDbConfig] = useState<{url: string, key: string}>(initialConfig);
   const [isDbConnected, setIsDbConnected] = useState<boolean>(!!(initialConfig.url && initialConfig.key));
   const [configSource, setConfigSource] = useState<string>(initialConfig.source);
 
-  // State Data Agency
   const [settings, setSettings] = useState<AgencySettings>(() => {
-    // Load local dulu untuk instant render, nanti ditimpa DB jika connect
     const saved = localStorage.getItem('agency_settings');
     return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
   });
@@ -60,12 +52,9 @@ const SettingsManager: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   
-  // Modals
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [showStorageModal, setShowStorageModal] = useState(false);
 
-  // 2. AUTO FETCH ON MOUNT
-  // Effect ini memastikan jika config ada (baik dari ENV atau Local), data langsung ditarik dari DB.
   useEffect(() => {
     if (dbConfig.url && dbConfig.key) {
       fetchSettingsFromDb(dbConfig);
@@ -85,10 +74,9 @@ const SettingsManager: React.FC = () => {
             .limit(1)
             .maybeSingle();
 
-          if (error) throw error;
+          if (error && error.code !== 'PGRST116') throw error; // Ignore empty result error
 
           if (data) {
-              console.log("Data loaded from Supabase Cloud");
               const newSettings: AgencySettings = {
                   name: data.name,
                   department: data.department,
@@ -96,17 +84,12 @@ const SettingsManager: React.FC = () => {
                   contactInfo: data.contact_info,
                   logoUrl: data.logo_url || INITIAL_SETTINGS.logoUrl
               };
-              // TIMPA STATE LOKAL DENGAN DATA DB
               setSettings(newSettings);
               setPreviewLogo(newSettings.logoUrl);
-              // Update localstorage agar sinkron untuk sesi offline berikutnya
               localStorage.setItem('agency_settings', JSON.stringify(newSettings));
-          } else {
-              console.log("Connected to Supabase, but table is empty. Using defaults.");
           }
       } catch (err: any) {
           console.error("Gagal mengambil data pengaturan:", err.message);
-          // Optional: Tampilkan notif error kecil
       } finally {
           setIsLoadingData(false);
       }
@@ -116,15 +99,12 @@ const SettingsManager: React.FC = () => {
     e.preventDefault();
     setIsSaving(true);
 
-    // 1. Simpan Lokal
     localStorage.setItem('agency_settings', JSON.stringify(settings));
 
-    // 2. Simpan Cloud (Jika terkoneksi)
     if (isDbConnected && dbConfig.url && dbConfig.key) {
         try {
             const supabase = createClient(dbConfig.url, dbConfig.key);
 
-            // Cek existing
             const { data: existing } = await supabase
                 .from('agency_settings')
                 .select('id')
@@ -138,7 +118,7 @@ const SettingsManager: React.FC = () => {
                         name: settings.name,
                         department: settings.department,
                         address: settings.address,
-                        contact_info: settings.contactInfo, // snake_case mapping
+                        contact_info: settings.contactInfo,
                         logo_url: settings.logoUrl,
                         updated_at: new Date()
                     })
@@ -173,11 +153,11 @@ const SettingsManager: React.FC = () => {
     e.preventDefault();
     if (dbConfig.url && dbConfig.key) {
         try {
-            new URL(dbConfig.url); // Simple validation
+            new URL(dbConfig.url);
             localStorage.setItem('supabase_config', JSON.stringify(dbConfig));
             setIsDbConnected(true);
             setConfigSource('local');
-            fetchSettingsFromDb(dbConfig); // Trigger fetch manual
+            fetchSettingsFromDb(dbConfig);
         } catch (error) {
             alert("Format URL Supabase tidak valid.");
         }
@@ -197,7 +177,6 @@ const SettingsManager: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Fallback Offline
     const useLocalFallback = () => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -256,10 +235,8 @@ const SettingsManager: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN */}
         <div className="lg:col-span-2 space-y-8">
           
-          {/* DATABASE CONFIG SECTION */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 overflow-hidden relative">
              <div className="absolute top-0 right-0 p-4 opacity-5">
                 <Database size={100} />
@@ -337,7 +314,6 @@ const SettingsManager: React.FC = () => {
                             <RefreshCw size={16} className={isLoadingData ? "animate-spin" : ""} />
                             <span>Sync Data</span>
                         </button>
-                        {/* Only allow disconnect if manual config */}
                         {configSource !== 'env' && (
                             <button onClick={handleDisconnectDb} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 flex items-center space-x-2 transition-all text-sm">
                                 <Unplug size={16} /><span>Putus Koneksi</span>
@@ -348,7 +324,6 @@ const SettingsManager: React.FC = () => {
              )}
           </div>
 
-          {/* AGENCY SETTINGS FORM */}
           <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6 relative">
             {isLoadingData && (
                 <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center backdrop-blur-sm rounded-2xl">
@@ -361,7 +336,6 @@ const SettingsManager: React.FC = () => {
             
             <div className="space-y-4">
                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Identitas Kop Surat</h3>
-               
                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Nama Pemerintahan / Instansi Induk</label>
                   <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
@@ -369,7 +343,6 @@ const SettingsManager: React.FC = () => {
                      <input type="text" value={settings.name} onChange={(e) => setSettings({...settings, name: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium" placeholder="Contoh: PEMERINTAH KABUPATEN DEMAK" />
                   </div>
                </div>
-
                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Nama Unit Kerja / OPD</label>
                   <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
@@ -377,7 +350,6 @@ const SettingsManager: React.FC = () => {
                      <input type="text" value={settings.department} onChange={(e) => setSettings({...settings, department: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium" placeholder="Contoh: SEKRETARIAT DAERAH" />
                   </div>
                </div>
-
                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Alamat Lengkap</label>
                   <div className="flex items-start bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
@@ -385,7 +357,6 @@ const SettingsManager: React.FC = () => {
                      <textarea value={settings.address} onChange={(e) => setSettings({...settings, address: e.target.value})} className="bg-transparent w-full text-sm outline-none text-slate-900 font-medium resize-none" rows={2} placeholder="Alamat kantor..." />
                   </div>
                </div>
-
                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Kontak (Telp/Fax/Email/Web)</label>
                   <div className="flex items-start bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
@@ -397,7 +368,6 @@ const SettingsManager: React.FC = () => {
 
             <div className="space-y-4 pt-4">
                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Logo Instansi</h3>
-               
                <div className="flex items-start space-x-6">
                   <div className="w-32 h-32 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative">
                      {isUploading ? (
@@ -444,7 +414,6 @@ const SettingsManager: React.FC = () => {
           </form>
         </div>
 
-        {/* PREVIEW SECTION (Right Column) */}
         <div>
            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Preview Kop Surat</h3>
            <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200" style={{ fontFamily: 'Times New Roman, serif' }}>
@@ -478,7 +447,6 @@ const SettingsManager: React.FC = () => {
         </div>
       </div>
 
-      {/* SQL MODAL */}
       {showSqlModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
@@ -487,24 +455,75 @@ const SettingsManager: React.FC = () => {
                       <button onClick={() => setShowSqlModal(false)}><Unplug size={20} className="text-slate-400 hover:text-slate-600"/></button>
                   </div>
                   <div className="p-6 bg-slate-900 text-slate-300 font-mono text-xs overflow-auto max-h-[60vh]">
-                      <pre>{`-- 1. Table untuk Pengaturan Instansi
+<pre>{`-- 1. Table Settings
 CREATE TABLE public.agency_settings (
     id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     name TEXT NOT NULL,
     department TEXT NOT NULL,
     address TEXT,
     contact_info TEXT,
-    logo_url TEXT, -- Menyimpan URL Publik dari Storage
+    logo_url TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-
--- 2. Enable RLS (Security)
 ALTER TABLE public.agency_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access settings" ON public.agency_settings FOR ALL USING (true);
 
--- 3. Policy (Akses Publik untuk kemudahan awal)
-CREATE POLICY "Enable read access for all users" ON public.agency_settings FOR SELECT USING (true);
-CREATE POLICY "Enable insert access for all users" ON public.agency_settings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Enable update access for all users" ON public.agency_settings FOR UPDATE USING (true);`}</pre>
+-- 2. Table Pegawai
+CREATE TABLE public.employees (
+    id TEXT PRIMARY KEY,
+    nip TEXT NOT NULL,
+    name TEXT NOT NULL,
+    position TEXT,
+    grade TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access employees" ON public.employees FOR ALL USING (true);
+
+-- 3. Table Kota
+CREATE TABLE public.cities (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    province TEXT,
+    daily_allowance NUMERIC DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.cities ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access cities" ON public.cities FOR ALL USING (true);
+
+-- 4. Table Sumber Dana
+CREATE TABLE public.funding_sources (
+    id TEXT PRIMARY KEY,
+    code TEXT,
+    name TEXT,
+    budget_year TEXT,
+    amount NUMERIC DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.funding_sources ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access funding" ON public.funding_sources FOR ALL USING (true);
+
+-- 5. Table Transportasi
+CREATE TABLE public.transport_modes (
+    id TEXT PRIMARY KEY,
+    type TEXT,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.transport_modes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access transport" ON public.transport_modes FOR ALL USING (true);
+
+-- 6. Table Penandatangan
+CREATE TABLE public.signatories (
+    id TEXT PRIMARY KEY,
+    employee_id TEXT REFERENCES public.employees(id),
+    role TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.signatories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access signatories" ON public.signatories FOR ALL USING (true);
+`}</pre>
                   </div>
                   <div className="p-4 border-t text-right">
                       <button onClick={() => setShowSqlModal(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-lg hover:bg-slate-300">Tutup</button>
@@ -513,7 +532,6 @@ CREATE POLICY "Enable update access for all users" ON public.agency_settings FOR
           </div>
       )}
 
-      {/* STORAGE POLICY MODAL */}
       {showStorageModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
@@ -528,25 +546,11 @@ CREATE POLICY "Enable update access for all users" ON public.agency_settings FOR
 
                       <div className="bg-slate-900 p-4 rounded-lg text-slate-300 font-mono text-xs overflow-auto">
 <pre>{`-- Salin semua kode di bawah ini ke SQL Editor Supabase Anda:
-
--- 1. Buat Bucket 'images' (Public)
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('images', 'images', true)
-ON CONFLICT (id) DO NOTHING;
-
--- 2. Hapus Policy Lama (jika ada, agar tidak duplikat/error)
+INSERT INTO storage.buckets (id, name, public) VALUES ('images', 'images', true) ON CONFLICT (id) DO NOTHING;
 DROP POLICY IF EXISTS "Allow Public Upload" ON storage.objects;
 DROP POLICY IF EXISTS "Allow Public Select" ON storage.objects;
-
--- 3. Buat Policy Upload (INSERT) - Akses Publik
-CREATE POLICY "Allow Public Upload" 
-ON storage.objects FOR INSERT 
-WITH CHECK ( bucket_id = 'images' );
-
--- 4. Buat Policy Lihat (SELECT) - Akses Publik
-CREATE POLICY "Allow Public Select" 
-ON storage.objects FOR SELECT 
-USING ( bucket_id = 'images' );`}</pre>
+CREATE POLICY "Allow Public Upload" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'images' );
+CREATE POLICY "Allow Public Select" ON storage.objects FOR SELECT USING ( bucket_id = 'images' );`}</pre>
                       </div>
                   </div>
                   <div className="p-4 border-t text-right">

@@ -1,20 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Filter, MoreVertical, Download, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, MoreVertical, Download, X, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { Employee } from '../types';
 
 const INITIAL_EMPLOYEES: Employee[] = [
   { id: '1', nip: '198801012015031001', name: 'Andi Pratama, S.T.', position: 'Kepala Bagian IT', grade: 'IV/a' },
   { id: '2', nip: '199205122018012002', name: 'Siti Wahyuni, M.Ak.', position: 'Staf Keuangan', grade: 'III/c' },
-  { id: '3', nip: '198509202010121003', name: 'Bambang Sudjatmiko', position: 'Pranata Humas', grade: 'III/d' },
-  { id: '4', nip: '199511302021021004', name: 'Rian Hidayat, S.Kom.', position: 'Pranata Komputer', grade: 'III/a' },
 ];
 
 const EmployeeManager: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem('employees');
-    return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
-  });
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -27,9 +25,54 @@ const EmployeeManager: React.FC = () => {
     grade: ''
   });
 
+  // Helper: Get Supabase Client
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
-    localStorage.setItem('employees', JSON.stringify(employees));
-  }, [employees]);
+    fetchEmployees();
+  }, []);
+
+  const fetchEmployees = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    
+    // 1. Try DB
+    if (client) {
+      try {
+        const { data, error } = await client.from('employees').select('*').order('name');
+        if (error) throw error;
+        if (data && data.length > 0) {
+           setEmployees(data);
+           setIsLoading(false);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    // 2. Fallback Local Storage
+    const saved = localStorage.getItem('employees');
+    setEmployees(saved ? JSON.parse(saved) : INITIAL_EMPLOYEES);
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: Employee[]) => {
+    localStorage.setItem('employees', JSON.stringify(data));
+  };
 
   const handleOpenModal = (emp?: Employee) => {
     if (emp) {
@@ -42,19 +85,53 @@ const EmployeeManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const client = getSupabase();
+    
+    const newId = editingEmployee ? editingEmployee.id : Date.now().toString();
+    const payload = { ...formData, id: newId };
+    
+    // Optimistic Update
+    let updatedList = [];
     if (editingEmployee) {
-      setEmployees(employees.map(emp => emp.id === editingEmployee.id ? { ...formData, id: emp.id } : emp));
+      updatedList = employees.map(emp => emp.id === editingEmployee.id ? payload : emp);
     } else {
-      setEmployees([...employees, { ...formData, id: Date.now().toString() }]);
+      updatedList = [...employees, payload];
     }
+    setEmployees(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    // DB Update
+    if (client) {
+      try {
+        const { error } = await client.from('employees').upsert(payload);
+        if (error) {
+           alert("Gagal menyimpan ke Database: " + error.message);
+           fetchEmployees(); // Revert on error
+        }
+      } catch (e) {
+        console.error("DB Save Error:", e);
+      }
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
-      setEmployees(employees.filter(emp => emp.id !== id));
+      const updatedList = employees.filter(emp => emp.id !== id);
+      setEmployees(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if (client) {
+        try {
+           const { error } = await client.from('employees').delete().eq('id', id);
+           if (error) alert("Gagal menghapus dari Database: " + error.message);
+        } catch (e) {
+           console.error("DB Delete Error:", e);
+        }
+      }
     }
   };
 
@@ -71,6 +148,9 @@ const EmployeeManager: React.FC = () => {
           <p className="text-slate-500">Kelola informasi pegawai yang berhak melakukan perjalanan dinas.</p>
         </div>
         <div className="flex items-center space-x-3">
+          <button onClick={fetchEmployees} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors" title="Refresh Data">
+             <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+          </button>
           <button className="flex items-center space-x-2 px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition-colors">
             <Download size={18} />
             <span className="font-medium text-sm">Ekspor Excel</span>
@@ -97,6 +177,11 @@ const EmployeeManager: React.FC = () => {
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border-transparent rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
             />
           </div>
+          {getSupabase() && (
+             <div className="text-xs font-medium text-emerald-600 flex items-center bg-emerald-50 px-3 py-1 rounded-full">
+                <CheckCircle2 size={12} className="mr-1"/> Database Terhubung
+             </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -141,6 +226,9 @@ const EmployeeManager: React.FC = () => {
                   </td>
                 </tr>
               ))}
+              {filteredEmployees.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-slate-400">Tidak ada data pegawai.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
