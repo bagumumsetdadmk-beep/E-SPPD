@@ -187,7 +187,15 @@ const ReceiptManager: React.FC = () => {
             const { data: empData } = await client.from('employees').select('*');
             if(empData) setEmployees(empData);
             const { data: cityData } = await client.from('cities').select('*');
-            if(cityData) setCities(cityData.map((d:any) => ({...d, dailyAllowance: d.daily_allowance})));
+            if(cityData) {
+                const mappedCities = cityData.map((d:any) => ({
+                    id: d.id,
+                    name: d.name,
+                    province: d.province,
+                    dailyAllowance: Number(d.daily_allowance || d.dailyAllowance)
+                }));
+                setCities(mappedCities);
+            }
 
         } catch(e) { console.error(e); }
     } else {
@@ -211,8 +219,8 @@ const ReceiptManager: React.FC = () => {
   // Navigate from SPPD Manager
   useEffect(() => {
     if (location.state && location.state.createSppdId) {
-      // Check if data is ready
-      if (sppds.length > 0 && assignments.length > 0) {
+      // Check if data is ready (SPPDs, Tasks, AND Cities)
+      if (sppds.length > 0 && assignments.length > 0 && cities.length > 0) {
           const sppdId = location.state.createSppdId;
           const existing = receipts.find(r => r.sppdId === sppdId);
           if (existing) {
@@ -224,7 +232,7 @@ const ReceiptManager: React.FC = () => {
           navigate(location.pathname, { replace: true, state: {} });
       }
     }
-  }, [location.state, sppds, assignments]); // Wait for these to load
+  }, [location.state, sppds, assignments, cities]); // Added cities dependency
 
   const handleCreateFromSPPD = (sppdId: string) => {
     const sppd = sppds.find(s => s.id === sppdId);

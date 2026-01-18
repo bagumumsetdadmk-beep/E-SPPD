@@ -53,11 +53,6 @@ const SPPDManager: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
-  // Complete Modal State
-  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
-  const [itemToComplete, setItemToComplete] = useState<string | null>(null);
-
-
   const [editingSppd, setEditingSppd] = useState<Partial<SPPD> | null>(null);
   const [printingSppd, setPrintingSppd] = useState<SPPD | null>(null);
   
@@ -281,7 +276,6 @@ const SPPDManager: React.FC = () => {
     }
   };
 
-  // Logic Hapus dengan Modal
   const requestDelete = (id: string) => {
     setItemToDelete(id);
     setIsDeleteModalOpen(true);
@@ -303,37 +297,18 @@ const SPPDManager: React.FC = () => {
     }
   };
 
-  // Logic Complete dengan Modal (opsional jika manual complete)
-  const requestComplete = (id: string) => {
-      setItemToComplete(id);
-      setIsCompleteModalOpen(true);
-  };
-  
-  const confirmComplete = () => {
-      if(itemToComplete) {
-         setSppds(sppds.map(s => s.id === itemToComplete ? { ...s, status: 'Selesai' } : s));
-         setItemToComplete(null);
-      }
-  };
-
-
   const handleGoToReceipt = (sppdId: string) => {
     // Navigate to Receipt Manager with the SPPD ID to trigger creation
     navigate('/kwitansi', { state: { createSppdId: sppdId } });
   };
 
   const handlePrint = (sppd?: SPPD) => {
-    // Ensure settings are fresh when printing
-    const settingsData = localStorage.getItem('agency_settings');
-    if (settingsData) {
-      setAgencySettings(JSON.parse(settingsData));
-    }
-    
     if (sppd) {
+        // Refresh master data to ensure names are correct before printing
+        loadLocalData();
         setPrintingSppd(sppd);
         setIsPrintModalOpen(true);
     } else {
-        // Trigger actual print dialog
         window.print();
     }
   };
@@ -349,7 +324,6 @@ const SPPDManager: React.FC = () => {
     return { names, dest, ref: task.number, taskObj: task };
   };
 
-  // Helper date format
   const formatDateRange = (start: string, end: string) => {
     const s = new Date(start).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
     const e = new Date(end).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -364,6 +338,7 @@ const SPPDManager: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* ... (Keep existing header and lists) ... */}
       <div className="flex justify-between items-center print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Penerbitan SPPD</h1>
@@ -376,7 +351,7 @@ const SPPDManager: React.FC = () => {
         </div>
       </div>
 
-      {/* SECTION 1: READY TO PROCESS (Pending Assignments) */}
+      {/* SECTION 1: READY TO PROCESS */}
       <div className="space-y-4 print:hidden">
         <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center">
           <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div>
@@ -466,7 +441,6 @@ const SPPDManager: React.FC = () => {
                              <DollarSign size={16} />
                         </button>
                         
-                        {/* HIDE DELETE IF COMPLETED */}
                         {!isCompleted && (
                            <button onClick={() => requestDelete(s.id)} className="p-1.5 text-slate-300 hover:text-rose-600 transition-colors"><Trash2 size={16}/></button>
                         )}
@@ -489,7 +463,6 @@ const SPPDManager: React.FC = () => {
                     </div>
 
                     <div className="mt-4 pt-4 border-t flex space-x-2">
-                      {/* HIDE EDIT IF COMPLETED */}
                       {!isCompleted ? (
                         <button onClick={() => handleEditSppd(s)} className="flex-1 px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center space-x-2">
                           <Edit2 size={16} />
@@ -507,15 +480,11 @@ const SPPDManager: React.FC = () => {
                   </div>
                 );
               })}
-              {sppds.length === 0 && (
-                 <div className="col-span-full py-10 text-center">
-                    <p className="text-slate-400 italic">Belum ada dokumen SPPD yang diterbitkan.</p>
-                 </div>
-              )}
             </div>
         </div>
       </div>
 
+      {/* Confirmation Modal and Input Modal ... (Keep unchanged) */}
       <ConfirmationModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
@@ -526,7 +495,6 @@ const SPPDManager: React.FC = () => {
         isDanger={true}
       />
 
-      {/* INPUT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
@@ -594,7 +562,7 @@ const SPPDManager: React.FC = () => {
         </div>
       )}
 
-      {/* PRINT MODAL */}
+      {/* PRINT MODAL (COMPLETELY REDESIGNED) */}
       {isPrintModalOpen && printingSppd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
           <div className="bg-white rounded-2xl w-full max-w-[210mm] shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 print:shadow-none print:m-0 print:w-full print:max-h-none print:h-auto">
@@ -610,7 +578,7 @@ const SPPDManager: React.FC = () => {
             </div>
 
             <div className="overflow-y-auto flex-1 custom-scrollbar">
-              <div id="print-area" className="bg-white leading-tight text-sm text-black p-[15mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000' }}>
+              <div id="print-area" className="bg-white text-black p-[15mm]" style={{ fontFamily: 'Times New Roman, serif', color: '#000000', fontSize: '11pt' }}>
                 {(() => {
                     const details = getTaskDetails(printingSppd.assignmentId);
                     if (!details.taskObj) return <div className="p-10 text-center text-red-500">Data tidak ditemukan</div>;
@@ -623,152 +591,172 @@ const SPPDManager: React.FC = () => {
                     const fund = fundingSources.find(f => f.id === printingSppd.fundingId);
                     const followers = taskObj?.employeeIds.slice(1).map(eid => employees.find(e => e.id === eid)) || [];
 
-                    const commonBorder = "border border-black p-1 align-top";
+                    const commonBorder = "border border-black align-top p-1";
 
                     return (
-                        <div className="text-xs">
-                            {/* PAGE 1: SPPD FRONT */}
-                            <div className="flex items-center border-b-[3px] border-black pb-2 mb-4">
-                               <div className="w-20 text-center mr-4">
-                                  <img src={agencySettings.logoUrl} className="h-16 w-auto object-contain mx-auto" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                               </div>
-                               <div className="flex-1 text-center">
-                                  <h3 className="font-bold text-sm uppercase">{agencySettings.name}</h3>
-                                  <h1 className="font-bold text-lg uppercase">{agencySettings.department}</h1>
-                                  <p className="text-[10px]">{agencySettings.address}</p>
-                               </div>
-                            </div>
+                        <div>
+                            {/* PAGE 1 */}
+                            <table width="100%" style={{ borderBottom: '3px double black', marginBottom: '10px' }}>
+                                <tbody>
+                                    <tr>
+                                        <td width="15%" align="center" style={{verticalAlign: 'middle'}}>
+                                            <img src={agencySettings.logoUrl} style={{ height: '80px', width: 'auto' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                        </td>
+                                        <td align="center">
+                                            <div style={{ fontSize: '14pt', fontWeight: 'bold' }}>{agencySettings.name}</div>
+                                            <div style={{ fontSize: '16pt', fontWeight: 'bold' }}>{agencySettings.department}</div>
+                                            <div style={{ fontSize: '9pt' }}>{agencySettings.address}</div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
 
-                            <div className="flex justify-end mb-2 text-[10px]">
-                               <table><tbody>
-                                   <tr><td>Lembar ke</td><td>:</td><td>.....................</td></tr>
-                                   <tr><td>Kode No</td><td>:</td><td>.....................</td></tr>
-                                   <tr><td>Nomor</td><td>:</td><td>{printingSppd.id}</td></tr>
-                               </tbody></table>
+                            <div className="flex justify-end mb-4" style={{ fontSize: '10pt' }}>
+                                <table>
+                                    <tbody>
+                                        <tr><td>Lembar Ke</td><td>: ....................</td></tr>
+                                        <tr><td>Kode No</td><td>: ....................</td></tr>
+                                        <tr><td>Nomor</td><td>: {printingSppd.id}</td></tr>
+                                    </tbody>
+                                </table>
                             </div>
 
                             <div className="text-center mb-4">
-                                <h2 className="font-bold text-sm underline uppercase">SURAT PERINTAH PERJALANAN DINAS</h2>
-                                <p className="text-[10px]">(SPPD)</p>
+                                <u style={{ fontWeight: 'bold', fontSize: '12pt' }}>SURAT PERINTAH PERJALANAN DINAS</u>
                             </div>
-                            
-                            <table className="w-full border-collapse border border-black mb-4">
-                               <tbody>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center w-8`}>1.</td>
-                                      <td className={`${commonBorder} w-[40%]`}>Pejabat Berwenang yang memberi Perintah</td>
-                                      <td className={commonBorder}>{signatory?.role}</td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>2.</td>
-                                      <td className={commonBorder}>Nama Pegawai yang diperintah</td>
-                                      <td className={commonBorder}>{emp?.name}</td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>3.</td>
-                                      <td className={commonBorder}>
-                                          a. Pangkat dan Golongan menurut ruang gaji<br/>
-                                          b. Jabatan / Instansi<br/>
-                                          c. Tingkat Biaya Perjalanan Dinas
-                                      </td>
-                                      <td className={commonBorder}>
-                                          a. {emp?.grade}<br/>
-                                          b. {emp?.position}<br/>
-                                          c. ....................................................
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>4.</td>
-                                      <td className={commonBorder}>Maksud Perjalanan Dinas</td>
-                                      <td className={commonBorder}>{taskObj?.subject}</td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>5.</td>
-                                      <td className={commonBorder}>Alat angkutan yang dipergunakan</td>
-                                      <td className={commonBorder}>{trans?.type}</td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>6.</td>
-                                      <td className={commonBorder}>
-                                          a. Tempat Berangkat<br/>
-                                          b. Tempat Tujuan
-                                      </td>
-                                      <td className={commonBorder}>
-                                          a. Kabupaten Demak<br/>
-                                          b. {dest?.name}
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>7.</td>
-                                      <td className={commonBorder}>
-                                          a. Lamanya Perjalanan Dinas<br/>
-                                          b. Tanggal Berangkat<br/>
-                                          c. Tanggal Harus Kembali / Tiba di Tempat Baru *)
-                                      </td>
-                                      <td className={commonBorder}>
-                                          a. {taskObj?.duration} hari<br/>
-                                          b. {formatDateIndo(printingSppd.startDate)}<br/>
-                                          c. {formatDateIndo(printingSppd.endDate)}
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>8.</td>
-                                      <td className={commonBorder}>Pengikut : Nama</td>
-                                      <td className={commonBorder}>
-                                          {followers.length > 0 ? (
-                                              <ul className="list-decimal list-inside m-0 p-0">
-                                                  {followers.map((f, i) => <li key={i}>{f?.name}</li>)}
-                                              </ul>
-                                          ) : <span>-</span>}
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>9.</td>
-                                      <td className={commonBorder}>
-                                          Pembebanan Anggaran<br/>
-                                          a. Instansi<br/>
-                                          b. Mata Anggaran
-                                      </td>
-                                      <td className={commonBorder}>
-                                          <br/>
-                                          a. {agencySettings.department}<br/>
-                                          b. {fund?.code}
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td className={`${commonBorder} text-center`}>10.</td>
-                                      <td className={commonBorder}>Keterangan Lain-lain</td>
-                                      <td className={commonBorder}></td>
-                                  </tr>
-                               </tbody>
+
+                            <table width="100%" style={{ borderCollapse: 'collapse', fontSize: '11pt' }}>
+                                <tbody>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`} width="5%">1</td>
+                                        <td className={`${commonBorder}`} width="45%">Pejabat berwenang yang memberi Perintah</td>
+                                        <td className={`${commonBorder}`}>{signatory?.role}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>2</td>
+                                        <td className={`${commonBorder}`}>Nama/NIP Pegawai yang Diperintahkan</td>
+                                        <td className={`${commonBorder}`}>{emp?.name} <br/> NIP. {emp?.nip}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>3</td>
+                                        <td className={`${commonBorder}`}>
+                                            a. Pangkat dan Golongan ruang gaji<br/>
+                                            b. Jabatan / Instansi<br/>
+                                            c. Tingkat Biaya Perjalanan Dinas
+                                        </td>
+                                        <td className={`${commonBorder}`}>
+                                            a. {emp?.grade}<br/>
+                                            b. {emp?.position}<br/>
+                                            c.
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>4</td>
+                                        <td className={`${commonBorder}`}>Maksud Perjalanan Dinas</td>
+                                        <td className={`${commonBorder}`}>{taskObj?.subject}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>5</td>
+                                        <td className={`${commonBorder}`}>Alat angkutan yang dipergunakan</td>
+                                        <td className={`${commonBorder}`}>{trans?.type}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>6</td>
+                                        <td className={`${commonBorder}`}>
+                                            a. Tempat berangkat<br/>
+                                            b. Tempat Tujuan
+                                        </td>
+                                        <td className={`${commonBorder}`}>
+                                            a. Kabupaten Demak<br/>
+                                            b. {dest?.name}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>7</td>
+                                        <td className={`${commonBorder}`}>
+                                            a. Lamanya Perjalanan Dinas<br/>
+                                            b. Tanggal berangkat<br/>
+                                            c. Tanggal harus kembali/tiba di tempat baru *)
+                                        </td>
+                                        <td className={`${commonBorder}`}>
+                                            a. {taskObj?.duration} hari<br/>
+                                            b. {formatDateIndo(printingSppd.startDate)}<br/>
+                                            c. {formatDateIndo(printingSppd.endDate)}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>8</td>
+                                        <td className={`${commonBorder}`}>
+                                            Pengikut : Nama
+                                        </td>
+                                        <td className={`${commonBorder}`}>
+                                            {followers.length > 0 ? followers.map((f, i) => (
+                                                <div key={i}>{i+1}. {f?.name}</div>
+                                            )) : '-'}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>9</td>
+                                        <td className={`${commonBorder}`}>
+                                            Pembebanan Anggaran<br/>
+                                            a. Instansi<br/>
+                                            b. Mata Anggaran
+                                        </td>
+                                        <td className={`${commonBorder}`}>
+                                            <br/>
+                                            a. {agencySettings.department}<br/>
+                                            b. {fund?.code}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td className={`${commonBorder} text-center`}>10</td>
+                                        <td className={`${commonBorder}`}>Keterangan lain-lain</td>
+                                        <td className={`${commonBorder}`}></td>
+                                    </tr>
+                                </tbody>
                             </table>
 
-                            <div className="flex justify-end mt-4">
-                               <div className="w-[45%]">
-                                  <p>Dikeluarkan di : Demak</p>
-                                  <p className="mb-2">Pada tanggal : {formatDateIndo(printingSppd.startDate)}</p>
-                                  
-                                  <div className="mt-4">
-                                      <p className="font-bold">{signatory?.role}</p>
-                                      <div className="h-16"></div>
-                                      <p className="font-bold underline">{signatoryEmp?.name}</p>
-                                      <p>NIP. {signatoryEmp?.nip}</p>
-                                  </div>
-                               </div>
-                            </div>
+                            <div style={{ marginTop: '5px', fontSize: '10pt' }}>*) coret yang tidak perlu</div>
 
-                            {/* PAGE BREAK & VISUM */}
+                            <table width="100%" style={{ marginTop: '20px' }}>
+                                <tbody>
+                                    <tr>
+                                        <td width="50%"></td>
+                                        <td width="50%">
+                                            Dikeluarkan di : Demak<br/>
+                                            Tanggal : {formatDateIndo(printingSppd.startDate)}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style={{ paddingTop: '20px' }}>
+                                            Pelaksana SPPD<br/><br/><br/><br/><br/>
+                                            <u style={{ fontWeight: 'bold' }}>{emp?.name}</u><br/>
+                                            NIP. {emp?.nip}
+                                        </td>
+                                        <td align="center" style={{ paddingTop: '20px' }}>
+                                            {signatory?.role}<br/><br/><br/><br/><br/>
+                                            <u style={{ fontWeight: 'bold' }}>{signatoryEmp?.name}</u><br/>
+                                            {signatoryEmp?.grade}<br/>
+                                            NIP. {signatoryEmp?.nip}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            {/* PAGE BREAK FOR VISUM */}
                             <div className="page-break"></div>
-                            
-                            <div className="mt-8">
-                                {/* Row 1 */}
-                                <div className="grid grid-cols-2">
+
+                            {/* VISUM PAGE */}
+                            <div className="border border-black mt-8 text-sm">
+                                {/* ROW I */}
+                                <div className="grid grid-cols-2 border-b border-black">
                                     <div className="p-2 border-r border-black"></div>
                                     <div className="p-2">
-                                        <p>Berangkat dari : Kabupaten Demak</p>
-                                        <p>Ke : {dest?.name}</p>
-                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
-                                        <div className="mt-4 text-center">
+                                        <p>I. Berangkat dari : Kabupaten Demak</p>
+                                        <p>&nbsp;&nbsp;(Tempat Kedudukan)</p>
+                                        <p>&nbsp;&nbsp;Ke : {dest?.name}</p>
+                                        <p>&nbsp;&nbsp;Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
+                                        <div className="text-center mt-4">
                                             <p className="font-bold">{signatory?.role}</p>
                                             <div className="h-16"></div>
                                             <p className="font-bold underline">{signatoryEmp?.name}</p>
@@ -777,65 +765,73 @@ const SPPDManager: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Row 2 (Destinations) */}
-                                <div className="grid grid-cols-2 border-t border-black">
-                                    <div className="p-2 border-r border-black min-h-[150px]">
+                                {/* ROW II */}
+                                <div className="grid grid-cols-2 border-b border-black">
+                                    <div className="p-2 border-r border-black">
                                         <p>II. Tiba di : {dest?.name}</p>
-                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
-                                        <p className="mt-8 text-center text-[10px]">(Tanda Tangan Pejabat Setempat)</p>
+                                        <p>&nbsp;&nbsp;&nbsp;Pada Tanggal : {formatDateIndo(printingSppd.startDate)}</p>
+                                        <p>&nbsp;&nbsp;&nbsp;Kepala :</p>
+                                        <div className="h-16"></div>
+                                        <p className="text-center">(...................................................)</p>
+                                        <p className="text-center">NIP. ..........................................</p>
                                     </div>
-                                    <div className="p-2 min-h-[150px]">
+                                    <div className="p-2">
                                         <p>Berangkat dari : {dest?.name}</p>
                                         <p>Ke : Kabupaten Demak</p>
                                         <p>Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
-                                        <p className="mt-8 text-center text-[10px]">(Tanda Tangan Pejabat Setempat)</p>
+                                        <p>Kepala :</p>
+                                        <div className="h-16"></div>
+                                        <p className="text-center">(...................................................)</p>
+                                        <p className="text-center">NIP. ..........................................</p>
                                     </div>
                                 </div>
 
-                                {/* Row 3 (Intermediate) */}
-                                <div className="grid grid-cols-2 border-t border-black">
-                                    <div className="p-2 border-r border-black min-h-[150px]">
-                                        <p>III. Tiba di : ......................</p>
-                                        <p>Pada Tanggal : ......................</p>
+                                {/* ROW III */}
+                                <div className="grid grid-cols-2 border-b border-black">
+                                    <div className="p-2 border-r border-black">
+                                        <p>III. Tiba di : ..........................................</p>
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;Pada Tanggal : ..........................................</p>
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;Kepala :</p>
                                     </div>
-                                    <div className="p-2 min-h-[150px]">
-                                        <p>Berangkat dari : ......................</p>
-                                        <p>Ke : ......................</p>
-                                        <p>Pada Tanggal : ......................</p>
+                                    <div className="p-2">
+                                        <p>Berangkat dari : ..........................................</p>
+                                        <p>Ke : ..........................................</p>
+                                        <p>Pada Tanggal : ..........................................</p>
+                                        <p>Kepala :</p>
                                     </div>
                                 </div>
 
-                                {/* Row 4 (Return) */}
-                                <div className="grid grid-cols-2 border-t border-black">
-                                    <div className="p-2 border-r border-black min-h-[150px]">
+                                {/* ROW IV */}
+                                <div className="grid grid-cols-2 border-b border-black">
+                                    <div className="p-2 border-r border-black">
                                         <p>IV. Tiba di : Kabupaten Demak</p>
-                                        <p>(Tempat Kedudukan)</p>
-                                        <p>Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
-                                        <div className="mt-4 text-center">
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;(Tempat Kedudukan)</p>
+                                        <p>&nbsp;&nbsp;&nbsp;&nbsp;Pada Tanggal : {formatDateIndo(printingSppd.endDate)}</p>
+                                        <div className="text-center mt-4">
                                             <p className="font-bold">Pejabat Pelaksana Teknis Kegiatan</p>
-                                            <div className="h-12"></div>
-                                            <p className="font-bold underline">......................................</p>
-                                            <p>NIP. ......................................</p>
+                                            <div className="h-16"></div>
+                                            <p className="font-bold underline">(...................................................)</p>
+                                            <p>NIP. ..........................................</p>
                                         </div>
                                     </div>
-                                    <div className="p-2 min-h-[150px]">
-                                        <p>Telah diperiksa dengan keterangan bahwa perjalanan tersebut atas perintahnya dan semata-mata untuk kepentingan jabatan dalam waktu yang sesingkat-singkatnya.</p>
-                                        <div className="mt-4 text-center">
+                                    <div className="p-2 text-justify">
+                                        <p>V. Telah diperiksa dengan keterangan bahwa perjalanan atas perintahnya dan semata-mata untuk kepentingan jabatan dalam waktu yang sesingkat-singkatnya.</p>
+                                        <div className="text-center mt-4">
                                             <p className="font-bold">{signatory?.role}</p>
-                                            <div className="h-12"></div>
+                                            <div className="h-16"></div>
                                             <p className="font-bold underline">{signatoryEmp?.name}</p>
                                             <p>NIP. {signatoryEmp?.nip}</p>
                                         </div>
                                     </div>
                                 </div>
-                                
-                                {/* Row 5 */}
-                                <div className="border-t border-b border-black p-2">
-                                    <p>V. Catatan Lain-lain</p>
+
+                                {/* ROW V & VI */}
+                                <div className="p-2 border-b border-black">
+                                    VI. Catatan Lain-lain
                                 </div>
                                 <div className="p-2">
-                                    <p className="font-bold mb-2">VI. PERHATIAN :</p>
-                                    <p>Pejabat yang berwenang menerbitkan SPPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat / tiba, serta bendaharawan bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila negara menderita rugi akibat kesalahan, kelalaian, dan kealpaannya.</p>
+                                    VII. PERHATIAN:<br/>
+                                    Pejabat yang berwenang menerbitkan SPPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat/tiba, serta bendaharawan bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila Daerah menderita rugi akibat kesalahan, kelalaian dan kealpaannya.
                                 </div>
                             </div>
                         </div>
