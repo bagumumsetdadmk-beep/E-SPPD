@@ -21,8 +21,10 @@ import {
   FileSearch,
   Check,
   XCircle,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { AssignmentLetter, Employee, Signatory, City, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -42,10 +44,8 @@ const AssignmentManager: React.FC = () => {
   const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
   
   // Tasks state
-  const [tasks, setTasks] = useState<AssignmentLetter[]>(() => {
-    const saved = localStorage.getItem('assignment_tasks_v2');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [tasks, setTasks] = useState<AssignmentLetter[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -76,6 +76,21 @@ const AssignmentManager: React.FC = () => {
     intermediateTitle: ''
   });
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   const loadMasterData = () => {
     const empData = localStorage.getItem('employees');
     const sigData = localStorage.getItem('signatories');
@@ -92,11 +107,54 @@ const AssignmentManager: React.FC = () => {
 
   useEffect(() => {
     loadMasterData();
+    fetchTasks();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('assignment_tasks_v2', JSON.stringify(tasks));
-  }, [tasks]);
+  const fetchTasks = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    
+    if (client) {
+      try {
+        const { data, error } = await client.from('assignment_letters').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        if (data) {
+           const mappedData: AssignmentLetter[] = data.map((item: any) => ({
+             id: item.id,
+             number: item.number,
+             date: item.date,
+             basis: item.basis,
+             employeeIds: item.employee_ids || [], // Snake to camel
+             subject: item.subject,
+             destinationId: item.destination_id,
+             destinationAddress: item.destination_address,
+             startDate: item.start_date,
+             endDate: item.end_date,
+             duration: item.duration,
+             signatoryId: item.signatory_id,
+             status: item.status,
+             signatureType: item.signature_type,
+             upperTitle: item.upper_title,
+             intermediateTitle: item.intermediate_title
+           }));
+           setTasks(mappedData);
+           setIsLoading(false);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    // Fallback Local Storage
+    const saved = localStorage.getItem('assignment_tasks_v2');
+    setTasks(saved ? JSON.parse(saved) : []);
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: AssignmentLetter[]) => {
+    localStorage.setItem('assignment_tasks_v2', JSON.stringify(data));
+  };
 
   useEffect(() => {
     if (formData.startDate && formData.endDate) {
@@ -152,38 +210,98 @@ const AssignmentManager: React.FC = () => {
   };
 
   const handleOpenPrint = (task: AssignmentLetter) => {
-    loadMasterData(); // Ensure settings are fresh
+    loadMasterData();
     setPrintingTask(task);
     setIsPrintModalOpen(true);
   };
 
-  const handleUpdateStatus = (id: string, newStatus: string) => {
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
+    // Optimistic Update
     setTasks(tasks.map(t => t.id === id ? { ...t, status: newStatus } : t));
+    
+    // DB Update
+    const client = getSupabase();
+    if (client) {
+        try {
+            await client.from('assignment_letters').update({ status: newStatus }).eq('id', id);
+        } catch(e) { console.error(e); }
+    }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.employeeIds.length === 0) {
       alert('Harap tambahkan setidaknya satu pegawai.');
       return;
     }
+
+    const client = getSupabase();
+    const newId = editingTask ? editingTask.id : Date.now().toString();
+    const currentStatus = editingTask ? editingTask.status : 'Pending';
+
+    // Object for UI
+    const newTask: AssignmentLetter = { ...formData, id: newId, status: currentStatus };
+    
+    // Object for DB (snake_case)
+    const dbPayload = {
+        id: newId,
+        number: formData.number,
+        date: formData.date,
+        basis: formData.basis,
+        employee_ids: formData.employeeIds,
+        subject: formData.subject,
+        destination_id: formData.destinationId,
+        destination_address: formData.destinationAddress,
+        start_date: formData.startDate,
+        end_date: formData.endDate,
+        duration: formData.duration,
+        signatory_id: formData.signatoryId,
+        status: currentStatus,
+        signature_type: formData.signatureType,
+        upper_title: formData.upperTitle,
+        intermediate_title: formData.intermediateTitle
+    };
+
+    // Optimistic Update
+    let updatedList;
     if (editingTask) {
-      setTasks(tasks.map((t) => t.id === editingTask.id ? { ...formData, id: t.id, status: t.status } : t));
+      updatedList = tasks.map((t) => t.id === editingTask.id ? newTask : t);
     } else {
-      setTasks([...tasks, { ...formData, id: Date.now().toString(), status: 'Pending' }]);
+      updatedList = [newTask, ...tasks];
     }
+    setTasks(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    // DB Update
+    if (client) {
+        try {
+            const { error } = await client.from('assignment_letters').upsert(dbPayload);
+            if (error) {
+                alert("Gagal menyimpan ke DB: " + error.message);
+                fetchTasks();
+            }
+        } catch (e) { console.error(e); }
+    }
   };
 
-  // Logic Hapus dengan Modal
   const requestDelete = (id: string) => {
     setItemToDelete(id);
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (itemToDelete) {
-      setTasks(tasks.filter((t) => t.id !== itemToDelete));
+      const updatedList = tasks.filter((t) => t.id !== itemToDelete);
+      setTasks(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('assignment_letters').delete().eq('id', itemToDelete);
+          } catch(e) { console.error(e); }
+      }
       setItemToDelete(null);
     }
   };
@@ -222,6 +340,7 @@ const AssignmentManager: React.FC = () => {
   };
 
   const formatDateIndo = (dateStr: string) => {
+    if(!dateStr) return '-';
     const date = new Date(dateStr);
     return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(date);
   };
@@ -233,13 +352,18 @@ const AssignmentManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Surat Tugas</h1>
           <p className="text-slate-500">Penerbitan, Verifikasi, dan Pencetakan Surat Tugas resmi.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all font-bold"
-        >
-          <Plus size={18} />
-          <span className="text-sm">Buat Surat Tugas</span>
-        </button>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchTasks} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            <button 
+            onClick={() => handleOpenModal()}
+            className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all font-bold"
+            >
+            <Plus size={18} />
+            <span className="text-sm">Buat Surat Tugas</span>
+            </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
@@ -594,7 +718,6 @@ const AssignmentManager: React.FC = () => {
       )}
 
       {/* MODAL PRINT PREVIEW */}
-      {/* ... Content stays same ... */}
        {isPrintModalOpen && printingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
           <div className="bg-white rounded-2xl w-full max-w-[210mm] shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 print:shadow-none print:m-0 print:w-full print:max-h-none print:h-auto">

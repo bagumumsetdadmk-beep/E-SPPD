@@ -1,16 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle, Clock, Plus, X, Trash2, Edit2 } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Plus, X, Trash2, Edit2, RefreshCw } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import ConfirmationModal from './ConfirmationModal';
 
 const ReportManager: React.FC = () => {
-  const [reports, setReports] = useState(() => {
-    const saved = localStorage.getItem('travel_reports');
-    const initial = [
-      { id: 'REP-2024-001', subject: 'Sosialisasi di Jakarta', results: 'Kegiatan berjalan dengan lancar. Seluruh peserta memahami mekanisme digitalisasi sistem terbaru...', status: 'Completed' },
-    ];
-    return saved ? JSON.parse(saved) : initial;
-  });
+  const [reports, setReports] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState<any>(null);
@@ -20,9 +16,51 @@ const ReportManager: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
-    localStorage.setItem('travel_reports', JSON.stringify(reports));
-  }, [reports]);
+    fetchReports();
+  }, []);
+
+  const fetchReports = async () => {
+    setIsLoading(true);
+    const client = getSupabase();
+    if(client) {
+        try {
+            const { data, error } = await client.from('travel_reports').select('*').order('created_at', { ascending: false });
+            if(error) throw error;
+            if(data) {
+                setReports(data);
+                setIsLoading(false);
+                return;
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    const saved = localStorage.getItem('travel_reports');
+    const initial = [
+      { id: 'REP-2024-001', subject: 'Sosialisasi di Jakarta', results: 'Kegiatan berjalan dengan lancar. Seluruh peserta memahami mekanisme digitalisasi sistem terbaru...', status: 'Completed' },
+    ];
+    setReports(saved ? JSON.parse(saved) : initial);
+    setIsLoading(false);
+  };
+
+  const syncToLocalStorage = (data: any[]) => {
+    localStorage.setItem('travel_reports', JSON.stringify(data));
+  };
 
   const handleOpenModal = (report?: any) => {
     if (report) {
@@ -35,14 +73,25 @@ const ReportManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const client = getSupabase();
+    
+    let updatedList;
     if (editingReport) {
-      setReports(reports.map((r: any) => r.id === editingReport.id ? formData : r));
+      updatedList = reports.map((r: any) => r.id === editingReport.id ? formData : r);
     } else {
-      setReports([...reports, formData]);
+      updatedList = [formData, ...reports];
     }
+    setReports(updatedList);
+    syncToLocalStorage(updatedList);
     setIsModalOpen(false);
+
+    if(client) {
+        try {
+            await client.from('travel_reports').upsert(formData);
+        } catch(e) { console.error(e); }
+    }
   };
 
   const requestDelete = (id: string) => {
@@ -50,9 +99,18 @@ const ReportManager: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (itemToDelete) {
-      setReports(reports.filter((r: any) => r.id !== itemToDelete));
+      const updatedList = reports.filter((r: any) => r.id !== itemToDelete);
+      setReports(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('travel_reports').delete().eq('id', itemToDelete);
+          } catch(e) { console.error(e); }
+      }
       setItemToDelete(null);
     }
   };
@@ -64,13 +122,18 @@ const ReportManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Laporan Perjalanan</h1>
           <p className="text-slate-500">Penyusunan laporan hasil kegiatan dinas.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="flex items-center space-x-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all font-bold"
-        >
-          <Plus size={18} />
-          <span>Tulis Laporan Baru</span>
-        </button>
+        <div className="flex items-center space-x-2">
+            <button onClick={fetchReports} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            <button 
+            onClick={() => handleOpenModal()}
+            className="flex items-center space-x-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all font-bold"
+            >
+            <Plus size={18} />
+            <span>Tulis Laporan Baru</span>
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -98,6 +161,11 @@ const ReportManager: React.FC = () => {
               </p>
             </div>
           ))}
+          {reports.length === 0 && (
+              <div className="py-10 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  Belum ada laporan yang dibuat.
+              </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -105,7 +173,7 @@ const ReportManager: React.FC = () => {
           <div className="bg-white p-6 rounded-2xl border border-dashed border-slate-300 flex items-center justify-center h-32 hover:border-indigo-400 transition-colors group cursor-pointer">
              <div className="text-center">
                 <Clock className="mx-auto text-slate-300 mb-2 group-hover:text-indigo-400" size={24} />
-                <p className="text-sm text-slate-400 group-hover:text-indigo-600 font-medium">Laporan Surabaya belum diselesaikan</p>
+                <p className="text-sm text-slate-400 group-hover:text-indigo-600 font-medium">Tidak ada tugas tertunda</p>
              </div>
           </div>
         </div>

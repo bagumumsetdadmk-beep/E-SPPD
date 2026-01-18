@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Receipt as ReceiptIcon, Upload, Camera, Search, Filter, X, Plus, Trash2, Edit2, Printer, Check, Eye, EyeOff, DollarSign, AlertTriangle } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { Receipt, SPPD, AssignmentLetter, Employee, City, Signatory, FundingSource } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -67,24 +68,7 @@ const ReceiptManager: React.FC = () => {
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   
-  const [receipts, setReceipts] = useState<Receipt[]>(() => {
-    const saved = localStorage.getItem('receipt_data_v2');
-    const parsed = saved ? JSON.parse(saved) : [];
-    
-    // SANITIZATION
-    return parsed.map((r: any) => ({
-      ...INITIAL_RECEIPT_STATE,
-      ...r,
-      dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...(r.dailyAllowance || {}) },
-      transport: { ...INITIAL_RECEIPT_STATE.transport, ...(r.transport || {}) },
-      accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...(r.accommodation || {}) },
-      fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...(r.fuel || {}) },
-      toll: { ...INITIAL_RECEIPT_STATE.toll, ...(r.toll || {}) },
-      representation: { ...INITIAL_RECEIPT_STATE.representation, ...(r.representation || {}) },
-      other: { ...INITIAL_RECEIPT_STATE.other, ...(r.other || {}) },
-      totalAmount: Number(r.totalAmount) || 0
-    }));
-  });
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -102,6 +86,21 @@ const ReceiptManager: React.FC = () => {
   // Form State
   const [formData, setFormData] = useState<Receipt>(INITIAL_RECEIPT_STATE);
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   useEffect(() => {
     // Load data from local storage
     try {
@@ -114,11 +113,60 @@ const ReceiptManager: React.FC = () => {
     } catch (e) {
         console.error("Error loading master data", e);
     }
+    fetchReceipts();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('receipt_data_v2', JSON.stringify(receipts));
-  }, [receipts]);
+  const fetchReceipts = async () => {
+    const client = getSupabase();
+    if(client) {
+        try {
+            const { data, error } = await client.from('receipts').select('*').order('created_at', { ascending: false });
+            if(error) throw error;
+            if(data) {
+                const mapped: Receipt[] = data.map((item: any) => ({
+                    id: item.id,
+                    sppdId: item.sppd_id,
+                    date: item.date,
+                    dailyAllowance: item.daily_allowance,
+                    transport: item.transport,
+                    accommodation: item.accommodation,
+                    fuel: item.fuel,
+                    toll: item.toll,
+                    representation: item.representation,
+                    other: item.other,
+                    totalAmount: Number(item.total_amount),
+                    status: item.status,
+                    treasurerId: item.treasurer_id,
+                    pptkId: item.pptk_id,
+                    kpaId: item.kpa_id
+                }));
+                setReceipts(mapped);
+                return;
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    const saved = localStorage.getItem('receipt_data_v2');
+    const parsed = saved ? JSON.parse(saved) : [];
+    // SANITIZATION
+    const sanitized = parsed.map((r: any) => ({
+      ...INITIAL_RECEIPT_STATE,
+      ...r,
+      dailyAllowance: { ...INITIAL_RECEIPT_STATE.dailyAllowance, ...(r.dailyAllowance || {}) },
+      transport: { ...INITIAL_RECEIPT_STATE.transport, ...(r.transport || {}) },
+      accommodation: { ...INITIAL_RECEIPT_STATE.accommodation, ...(r.accommodation || {}) },
+      fuel: { ...INITIAL_RECEIPT_STATE.fuel, ...(r.fuel || {}) },
+      toll: { ...INITIAL_RECEIPT_STATE.toll, ...(r.toll || {}) },
+      representation: { ...INITIAL_RECEIPT_STATE.representation, ...(r.representation || {}) },
+      other: { ...INITIAL_RECEIPT_STATE.other, ...(r.other || {}) },
+      totalAmount: Number(r.totalAmount) || 0
+    }));
+    setReceipts(sanitized);
+  };
+
+  const syncToLocalStorage = (data: Receipt[]) => {
+    localStorage.setItem('receipt_data_v2', JSON.stringify(data));
+  };
 
   // Check for navigation from SPPD Manager
   useEffect(() => {
@@ -210,11 +258,7 @@ const ReceiptManager: React.FC = () => {
       
       if (section === 'dailyAllowance') {
         updated.dailyAllowance[field] = value;
-        // Logic override: if we change days/amount, update total. 
-        // Note: This logic assumes 1 person if manually editing, or user must manually fix total.
-        // For simplicity in this edit, we assume user inputs total manually or we multiply.
         if (field === 'days' || field === 'amountPerDay') {
-            // Check if we can get employee count
             const sppd = sppds.find(s => s.id === prev.sppdId);
             const task = assignments.find(a => a.id === sppd?.assignmentId);
             const count = task?.employeeIds.length || 1;
@@ -235,7 +279,7 @@ const ReceiptManager: React.FC = () => {
     });
   };
 
-  const handleSave = (e?: React.FormEvent) => {
+  const handleSave = async (e?: React.FormEvent) => {
     if(e) e.preventDefault();
     
     if (!formData.sppdId) {
@@ -243,15 +287,42 @@ const ReceiptManager: React.FC = () => {
         return;
     }
     
+    const client = getSupabase();
     const safeTotal = Number(formData.totalAmount) || 0;
     const receiptToSave = { ...formData, totalAmount: safeTotal };
+
+    // DB Payload (snake_case)
+    const dbPayload = {
+        id: formData.id,
+        sppd_id: formData.sppdId,
+        date: formData.date,
+        daily_allowance: formData.dailyAllowance,
+        transport: formData.transport,
+        accommodation: formData.accommodation,
+        fuel: formData.fuel,
+        toll: formData.toll,
+        representation: formData.representation,
+        other: formData.other,
+        total_amount: safeTotal,
+        status: formData.status,
+        treasurer_id: formData.treasurerId,
+        pptk_id: formData.pptkId,
+        kpa_id: formData.kpaId
+    };
 
     if (editingReceipt) {
       setReceipts(prev => prev.map(r => r.id === editingReceipt.id ? receiptToSave : r));
     } else {
       setReceipts(prev => [...prev, receiptToSave]);
     }
+    syncToLocalStorage(editingReceipt ? receipts.map(r => r.id === editingReceipt.id ? receiptToSave : r) : [...receipts, receiptToSave]);
     setIsModalOpen(false);
+
+    if (client) {
+        try {
+            await client.from('receipts').upsert(dbPayload);
+        } catch(e) { console.error(e); }
+    }
   };
 
   // Step 1: Request Verification (Trigger Modal)
@@ -294,37 +365,76 @@ const ReceiptManager: React.FC = () => {
   };
 
   // Step 2: Confirm Verification (Execute Action)
-  const confirmVerifyPayment = () => {
+  const confirmVerifyPayment = async () => {
+    const client = getSupabase();
     const safeTotal = Number(formData.totalAmount) || 0;
     const sppd = sppds.find(s => s.id === formData.sppdId);
     const source = fundingSources.find(f => f.id === sppd?.fundingId);
 
+    // 1. Update Funding (Local)
     if (source && safeTotal > 0) {
         const updatedSources = fundingSources.map(s => 
           s.id === source.id ? { ...s, amount: s.amount - safeTotal } : s
         );
         setFundingSources(updatedSources);
         localStorage.setItem('funding_sources', JSON.stringify(updatedSources));
+        
+        // Update DB Funding
+        if(client) {
+            await client.from('funding_sources').update({ amount: source.amount - safeTotal }).eq('id', source.id);
+        }
     }
 
+    // 2. Update SPPD Status (Local)
     if (sppd) {
         const updatedSppds = sppds.map(s => 
           s.id === sppd.id ? { ...s, status: 'Selesai' as const } : s
         );
         setSppds(updatedSppds);
         localStorage.setItem('sppd_data', JSON.stringify(updatedSppds));
+        
+        // Update DB SPPD
+        if(client) {
+            await client.from('sppds').update({ status: 'Selesai' }).eq('id', sppd.id);
+        }
     }
 
+    // 3. Update Receipt
     const paidReceipt: Receipt = { 
         ...formData, 
         totalAmount: safeTotal,
         status: 'Paid' 
     };
     
+    // DB Payload for Receipt
+    const dbPayload = {
+        id: formData.id,
+        sppd_id: formData.sppdId,
+        date: formData.date,
+        daily_allowance: formData.dailyAllowance,
+        transport: formData.transport,
+        accommodation: formData.accommodation,
+        fuel: formData.fuel,
+        toll: formData.toll,
+        representation: formData.representation,
+        other: formData.other,
+        total_amount: safeTotal,
+        status: 'Paid',
+        treasurer_id: formData.treasurerId,
+        pptk_id: formData.pptkId,
+        kpa_id: formData.kpaId
+    };
+
     if (editingReceipt) {
       setReceipts(prev => prev.map(r => r.id === editingReceipt.id ? paidReceipt : r));
     } else {
       setReceipts(prev => [...prev, paidReceipt]);
+    }
+    syncToLocalStorage(editingReceipt ? receipts.map(r => r.id === editingReceipt.id ? paidReceipt : r) : [...receipts, paidReceipt]);
+
+    // Update DB Receipt
+    if(client) {
+        await client.from('receipts').upsert(dbPayload);
     }
 
     setIsModalOpen(false);
@@ -336,9 +446,18 @@ const ReceiptManager: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (itemToDelete) {
-      setReceipts(receipts.filter(r => r.id !== itemToDelete));
+      const updatedList = receipts.filter(r => r.id !== itemToDelete);
+      setReceipts(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+          try {
+              await client.from('receipts').delete().eq('id', itemToDelete);
+          } catch(e) { console.error(e); }
+      }
       setItemToDelete(null);
     }
   };
@@ -348,6 +467,7 @@ const ReceiptManager: React.FC = () => {
     setIsPrintModalOpen(true);
   };
 
+  // ... (renderMoneyInput and getReceiptDetails remain unchanged)
   const renderMoneyInput = (section: keyof Receipt, label: string) => {
     // Cast to any to safely access properties that might not exist on all Receipt keys
     const item = (formData[section] as any) || { amount: 0, description: '', visible: false };

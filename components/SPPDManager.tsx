@@ -17,6 +17,7 @@ import {
   Printer, 
   DollarSign 
 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -41,10 +42,7 @@ const SPPDManager: React.FC = () => {
   const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
 
   // SPPD State
-  const [sppds, setSppds] = useState<SPPD[]>(() => {
-    const saved = localStorage.getItem('sppd_data');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [sppds, setSppds] = useState<SPPD[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -84,6 +82,21 @@ const SPPDManager: React.FC = () => {
     fundingId: ''
   });
 
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
   // Load Data
   useEffect(() => {
     const empData = localStorage.getItem('employees');
@@ -103,11 +116,43 @@ const SPPDManager: React.FC = () => {
     if (settingsData) {
       setAgencySettings(JSON.parse(settingsData));
     }
+
+    fetchSPPDs();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('sppd_data', JSON.stringify(sppds));
-  }, [sppds]);
+  const fetchSPPDs = async () => {
+    const client = getSupabase();
+    
+    if (client) {
+      try {
+        const { data, error } = await client.from('sppds').select('*').order('created_at', { ascending: false });
+        if (error) throw error;
+        if (data) {
+           const mappedData: SPPD[] = data.map((item: any) => ({
+             id: item.id,
+             assignmentId: item.assignment_id,
+             startDate: item.start_date,
+             endDate: item.end_date,
+             status: item.status,
+             transportId: item.transport_id,
+             fundingId: item.funding_id
+           }));
+           setSppds(mappedData);
+           return;
+        }
+      } catch (e) {
+        console.error("DB Fetch Error:", e);
+      }
+    }
+
+    // Fallback
+    const saved = localStorage.getItem('sppd_data');
+    setSppds(saved ? JSON.parse(saved) : []);
+  };
+
+  const syncToLocalStorage = (data: SPPD[]) => {
+    localStorage.setItem('sppd_data', JSON.stringify(data));
+  };
 
   // Filter: Assignment Approved but NOT in SPPDs
   const readyToProcess = assignments.filter(task => 
@@ -161,9 +206,10 @@ const SPPDManager: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const client = getSupabase();
     const currentStatus = editingSppd ? (editingSppd.status || 'Sedang Berjalan') : 'Sedang Berjalan';
 
     const newSppdData: SPPD = {
@@ -176,12 +222,33 @@ const SPPDManager: React.FC = () => {
       fundingId: formData.fundingId
     };
 
+    const dbPayload = {
+      id: formData.id,
+      assignment_id: formData.assignmentId,
+      start_date: formData.startDate,
+      end_date: formData.endDate,
+      status: currentStatus,
+      transport_id: formData.transportId,
+      funding_id: formData.fundingId
+    };
+
     if (editingSppd) {
       setSppds(sppds.map(s => s.id === editingSppd.id ? { ...newSppdData } : s));
     } else {
       setSppds([...sppds, newSppdData]);
     }
+    syncToLocalStorage(editingSppd ? sppds.map(s => s.id === editingSppd.id ? newSppdData : s) : [...sppds, newSppdData]);
     setIsModalOpen(false);
+
+    if(client) {
+      try {
+        const { error } = await client.from('sppds').upsert(dbPayload);
+        if(error) {
+          alert("Gagal simpan DB: " + error.message);
+          fetchSPPDs();
+        }
+      } catch(e) { console.error(e); }
+    }
   };
 
   // Logic Hapus dengan Modal
@@ -190,9 +257,18 @@ const SPPDManager: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (itemToDelete) {
-      setSppds(sppds.filter(s => s.id !== itemToDelete));
+      const updatedList = sppds.filter(s => s.id !== itemToDelete);
+      setSppds(updatedList);
+      syncToLocalStorage(updatedList);
+
+      const client = getSupabase();
+      if(client) {
+        try {
+          await client.from('sppds').delete().eq('id', itemToDelete);
+        } catch(e) { console.error(e); }
+      }
       setItemToDelete(null);
     }
   };
