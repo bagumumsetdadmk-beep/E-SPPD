@@ -63,6 +63,8 @@ const AssignmentManager: React.FC = () => {
   });
 
   const isAdmin = user?.role === 'Admin';
+  const isOperator = user?.role === 'Operator';
+  const isVerificator = user?.role === 'Verificator';
 
   const getSupabase = () => {
     const env = (import.meta as any).env;
@@ -150,7 +152,9 @@ const AssignmentManager: React.FC = () => {
   }, [formData.startDate, formData.endDate]);
 
   const handleOpenModal = (task?: AssignmentLetter) => {
-    if (!isAdmin) return;
+    // Permission: Admin OR Operator
+    if (!isAdmin && !isOperator) return;
+    
     loadMasterData();
     if (task) {
       setEditingTask(task);
@@ -193,14 +197,16 @@ const AssignmentManager: React.FC = () => {
   };
 
   const handleOpenPrint = (task: AssignmentLetter) => {
-    // Modified: Allow Admin OR Operator to print
-    if (user?.role !== 'Admin' && user?.role !== 'Operator') return;
+    // Permission: Admin OR Operator
+    if (!isAdmin && !isOperator) return;
     setPrintingTask(task);
     setIsPrintModalOpen(true);
   };
 
   const handleUpdateStatus = async (id: string, newStatus: string) => {
-    if (!isAdmin) return;
+    // Logic permission check inside handler as backup
+    if (!isAdmin && !isVerificator) return;
+
     setTasks(tasks.map(t => t.id === id ? { ...t, status: newStatus } : t));
     const client = getSupabase();
     if (client) {
@@ -283,7 +289,8 @@ const AssignmentManager: React.FC = () => {
             <button onClick={fetchTasks} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
-            {isAdmin && (
+            {/* Create Button: OPS & Admin Only */}
+            {(isAdmin || isOperator) && (
               <button 
                 onClick={() => handleOpenModal()}
                 className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all font-bold"
@@ -311,6 +318,22 @@ const AssignmentManager: React.FC = () => {
               {tasks.map((task) => {
                 const dest = cities.find(c => c.id === task.destinationId);
                 const isApproved = task.status === 'Approved';
+
+                // --- ACCESS CONTROL LOGIC ---
+                // 1. Verification (Check/Reject):
+                //    - New Doc (Not Approved): Admin & Verificator
+                //    - Approved Doc: Admin Only
+                const canVerify = (isAdmin) || (isVerificator && !isApproved);
+
+                // 2. Print:
+                //    - Admin & Operator (Typically only when approved)
+                const canPrint = (isAdmin || isOperator) && isApproved;
+
+                // 3. CRUD (Edit/Delete):
+                //    - New Doc (Not Approved): Admin & Operator
+                //    - Approved Doc: Admin Only
+                const canManage = (isAdmin) || (isOperator && !isApproved);
+
                 return (
                   <tr key={task.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
@@ -333,31 +356,36 @@ const AssignmentManager: React.FC = () => {
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end items-center space-x-1">
                         
-                        {/* Approval Actions: Admin Only */}
-                        {isAdmin && task.status !== 'Approved' && task.status !== 'Rejected' && (
+                        {/* 1. VERIFICATION ACTIONS */}
+                        {canVerify && (
                             <div className="flex border-r pr-2 mr-1 space-x-1">
-                              <button onClick={() => handleUpdateStatus(task.id, task.status === 'Pending' ? 'Verified' : 'Approved')} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><Check size={16} /></button>
-                              <button onClick={() => handleUpdateStatus(task.id, 'Rejected')} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><XCircle size={16} /></button>
+                                {/* If not Approved, show Verify button. If Approved (and is Admin), show nothing (or allow reject to revert) */}
+                                {task.status !== 'Approved' && (
+                                    <button onClick={() => handleUpdateStatus(task.id, 'Approved')} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100" title="Setujui"><Check size={16} /></button>
+                                )}
+                                {task.status !== 'Rejected' && (
+                                    <button onClick={() => handleUpdateStatus(task.id, 'Rejected')} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100" title="Tolak"><XCircle size={16} /></button>
+                                )}
                             </div>
                         )}
                         
-                        {/* Print Button: Admin OR Operator (When Approved) */}
-                        {isApproved && (isAdmin || user?.role === 'Operator') && (
-                            <button onClick={() => handleOpenPrint(task)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg" title="Cetak Surat Tugas">
+                        {/* 2. PRINT ACTION */}
+                        {canPrint && (
+                            <button onClick={() => handleOpenPrint(task)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100" title="Cetak Surat Tugas">
                                 <Printer size={16} />
                             </button>
                         )}
                         
-                        {/* CRUD Buttons: Admin Only */}
-                        {isAdmin && (
+                        {/* 3. CRUD ACTIONS */}
+                        {canManage && (
                           <>
-                            <button onClick={() => handleOpenModal(task)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                            <button onClick={() => {setItemToDelete(task.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                            <button onClick={() => handleOpenModal(task)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit"><Edit2 size={16} /></button>
+                            <button onClick={() => {setItemToDelete(task.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus"><Trash2 size={16} /></button>
                           </>
                         )}
 
-                        {/* View Only: Non-Admin AND (Not Operator OR Not Approved) */}
-                        {!isAdmin && !(isApproved && user?.role === 'Operator') && (
+                        {/* View Only Indication */}
+                        {!canVerify && !canPrint && !canManage && (
                             <span className="text-xs text-slate-400">View Only</span>
                         )}
                       </div>
@@ -369,7 +397,7 @@ const AssignmentManager: React.FC = () => {
           </table>
         </div>
       </div>
-      {/* Modals same as before but respecting isAdmin checks */}
+      {/* Modals same as before but respecting isAdmin/isOperator checks */}
       <ConfirmationModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete} title="Hapus Surat Tugas" message="Hapus data?" />
     </div>
   );
