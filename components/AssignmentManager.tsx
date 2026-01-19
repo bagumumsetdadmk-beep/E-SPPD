@@ -15,7 +15,9 @@ import {
   Check, 
   XCircle, 
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Calendar,
+  FileText
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { AssignmentLetter, Employee, Signatory, City, AgencySettings, User } from '../types';
@@ -155,8 +157,6 @@ const AssignmentManager: React.FC = () => {
     // Permission: Admin OR Operator
     if (!isAdmin && !isOperator) return;
     
-    // Removed loadMasterData() here to prevent re-render issues/race conditions
-    
     if (task) {
       setEditingTask(task);
       setFormData({
@@ -205,9 +205,7 @@ const AssignmentManager: React.FC = () => {
   };
 
   const handleUpdateStatus = async (id: string, newStatus: string) => {
-    // Logic permission check inside handler as backup
     if (!isAdmin && !isVerificator) return;
-
     setTasks(tasks.map(t => t.id === id ? { ...t, status: newStatus } : t));
     const client = getSupabase();
     if (client) {
@@ -219,7 +217,10 @@ const AssignmentManager: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.employeeIds.length === 0) return;
+    if (formData.employeeIds.length === 0) {
+        alert("Pilih minimal satu pegawai yang bertugas.");
+        return;
+    }
 
     const client = getSupabase();
     const newId = editingTask ? editingTask.id : Date.now().toString();
@@ -273,6 +274,17 @@ const AssignmentManager: React.FC = () => {
     }
   };
 
+  const addEmployee = () => {
+    if (selectedEmpId && !formData.employeeIds.includes(selectedEmpId)) {
+      setFormData(prev => ({ ...prev, employeeIds: [...prev.employeeIds, selectedEmpId] }));
+      setSelectedEmpId('');
+    }
+  };
+
+  const removeEmployee = (id: string) => {
+    setFormData(prev => ({ ...prev, employeeIds: prev.employeeIds.filter(empId => empId !== id) }));
+  };
+
   const formatDateIndo = (dateStr: string) => {
     if(!dateStr) return '-';
     const date = new Date(dateStr);
@@ -290,7 +302,6 @@ const AssignmentManager: React.FC = () => {
             <button onClick={fetchTasks} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
                 <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
             </button>
-            {/* Create Button: OPS & Admin Only */}
             {(isAdmin || isOperator) && (
               <button 
                 type="button"
@@ -320,20 +331,8 @@ const AssignmentManager: React.FC = () => {
               {tasks.map((task) => {
                 const dest = cities.find(c => c.id === task.destinationId);
                 const isApproved = task.status === 'Approved';
-
-                // --- ACCESS CONTROL LOGIC ---
-                // 1. Verification (Check/Reject):
-                //    - New Doc (Not Approved): Admin & Verificator
-                //    - Approved Doc: Admin Only
                 const canVerify = (isAdmin) || (isVerificator && !isApproved);
-
-                // 2. Print:
-                //    - Admin & Operator (Typically only when approved)
                 const canPrint = (isAdmin || isOperator) && isApproved;
-
-                // 3. CRUD (Edit/Delete):
-                //    - New Doc (Not Approved): Admin & Operator
-                //    - Approved Doc: Admin Only
                 const canManage = (isAdmin) || (isOperator && !isApproved);
 
                 return (
@@ -350,18 +349,27 @@ const AssignmentManager: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {task.status}
+                        {task.status === 'Approved' ? (
+                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold flex w-fit items-center">
+                                <CheckCircle2 size={12} className="mr-1"/> Disetujui
+                            </span>
+                        ) : task.status === 'Rejected' ? (
+                            <span className="px-2 py-1 bg-rose-100 text-rose-700 rounded-md text-xs font-bold flex w-fit items-center">
+                                <XCircle size={12} className="mr-1"/> Ditolak
+                            </span>
+                        ) : (
+                            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-xs font-bold flex w-fit items-center">
+                                <Clock size={12} className="mr-1"/> Menunggu
+                            </span>
+                        )}
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-slate-700 font-medium">{task.duration} Hari</p>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end items-center space-x-1">
-                        
-                        {/* 1. VERIFICATION ACTIONS */}
                         {canVerify && (
                             <div className="flex border-r pr-2 mr-1 space-x-1">
-                                {/* If not Approved, show Verify button. If Approved (and is Admin), show nothing (or allow reject to revert) */}
                                 {task.status !== 'Approved' && (
                                     <button onClick={() => handleUpdateStatus(task.id, 'Approved')} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100" title="Setujui"><Check size={16} /></button>
                                 )}
@@ -370,23 +378,17 @@ const AssignmentManager: React.FC = () => {
                                 )}
                             </div>
                         )}
-                        
-                        {/* 2. PRINT ACTION */}
                         {canPrint && (
                             <button onClick={() => handleOpenPrint(task)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100" title="Cetak Surat Tugas">
                                 <Printer size={16} />
                             </button>
                         )}
-                        
-                        {/* 3. CRUD ACTIONS */}
                         {canManage && (
                           <>
                             <button onClick={() => handleOpenModal(task)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit"><Edit2 size={16} /></button>
                             <button onClick={() => {setItemToDelete(task.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus"><Trash2 size={16} /></button>
                           </>
                         )}
-
-                        {/* View Only Indication */}
                         {!canVerify && !canPrint && !canManage && (
                             <span className="text-xs text-slate-400">View Only</span>
                         )}
@@ -399,8 +401,295 @@ const AssignmentManager: React.FC = () => {
           </table>
         </div>
       </div>
-      {/* Modals same as before but respecting isAdmin/isOperator checks */}
+
       <ConfirmationModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete} title="Hapus Surat Tugas" message="Hapus data?" />
+
+      {/* CREATE / EDIT MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b flex justify-between items-center bg-slate-50 rounded-t-2xl">
+              <h3 className="text-xl font-bold text-slate-900 flex items-center">
+                  <FileText className="mr-2 text-indigo-600" />
+                  {editingTask ? 'Edit' : 'Buat'} Surat Tugas
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Header Section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nomor Surat</label>
+                    <input type="text" required value={formData.number} onChange={(e) => setFormData({...formData, number: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Contoh: 094/015/2024" />
+                 </div>
+                 <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Tanggal Surat</label>
+                    <input type="date" required value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+                 </div>
+              </div>
+
+              <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Dasar Pelaksanaan</label>
+                  <textarea required rows={3} value={formData.basis} onChange={(e) => setFormData({...formData, basis: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="Dasar hukum atau disposisi..." />
+              </div>
+
+              {/* Employee Selection */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Pegawai yang Ditugaskan</label>
+                  <div className="flex gap-2 mb-3">
+                     <select value={selectedEmpId} onChange={(e) => setSelectedEmpId(e.target.value)} className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none">
+                        <option value="">-- Pilih Pegawai --</option>
+                        {employees.map(emp => (
+                           <option key={emp.id} value={emp.id} disabled={formData.employeeIds.includes(emp.id)}>{emp.name} - {emp.position}</option>
+                        ))}
+                     </select>
+                     <button type="button" onClick={addEmployee} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 text-sm"><UserPlus size={16}/></button>
+                  </div>
+                  <div className="space-y-2">
+                      {formData.employeeIds.map((empId, idx) => {
+                          const emp = employees.find(e => e.id === empId);
+                          return (
+                              <div key={empId} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                                  <div className="flex items-center space-x-3">
+                                      <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">{idx + 1}</div>
+                                      <div>
+                                          <p className="text-sm font-bold text-slate-900">{emp?.name}</p>
+                                          <p className="text-xs text-slate-500">{emp?.nip} • {emp?.grade}</p>
+                                      </div>
+                                  </div>
+                                  <button type="button" onClick={() => removeEmployee(empId)} className="text-rose-500 hover:bg-rose-50 p-1 rounded"><UserMinus size={16}/></button>
+                              </div>
+                          );
+                      })}
+                      {formData.employeeIds.length === 0 && <p className="text-center text-slate-400 text-sm py-2 italic">Belum ada pegawai dipilih.</p>}
+                  </div>
+              </div>
+
+              <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Maksud Perjalanan Dinas</label>
+                  <textarea required rows={3} value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="Uraian kegiatan..." />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                     <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Kota Tujuan</label>
+                        <select required value={formData.destinationId} onChange={(e) => setFormData({...formData, destinationId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none">
+                            <option value="">-- Pilih Kota --</option>
+                            {cities.map(city => <option key={city.id} value={city.id}>{city.name} ({city.province})</option>)}
+                        </select>
+                     </div>
+                     <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Alamat Tujuan (Spesifik)</label>
+                        <textarea value={formData.destinationAddress} onChange={(e) => setFormData({...formData, destinationAddress: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none resize-none" rows={2} placeholder="Nama Gedung / Hotel / Instansi..." />
+                     </div>
+                 </div>
+                 <div className="space-y-4">
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Tgl. Berangkat</label>
+                            <input type="date" required value={formData.startDate} onChange={(e) => setFormData({...formData, startDate: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Tgl. Kembali</label>
+                            <input type="date" required value={formData.endDate} onChange={(e) => setFormData({...formData, endDate: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none" />
+                        </div>
+                     </div>
+                     <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 flex items-center justify-between">
+                        <span className="text-sm font-bold text-indigo-700">Durasi Perjalanan:</span>
+                        <span className="text-lg font-black text-indigo-700">{formData.duration} Hari</span>
+                     </div>
+                 </div>
+              </div>
+
+              {/* Signature Section */}
+              <div className="border-t pt-4">
+                  <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center"><ShieldCheck className="mr-2 text-slate-400" size={18}/> Otorisasi & Tanda Tangan</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Jenis Tanda Tangan</label>
+                        <select value={formData.signatureType} onChange={(e) => setFormData({...formData, signatureType: e.target.value as any})} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm outline-none">
+                            <option value="Direct">Langsung (Kepala)</option>
+                            <option value="AN">Atas Nama (a.n.)</option>
+                            <option value="UB">Untuk Beliau (u.b.)</option>
+                        </select>
+                     </div>
+                     {(formData.signatureType === 'AN' || formData.signatureType === 'UB') && (
+                         <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Jabatan Atasan (Baris 1)</label>
+                            <input type="text" value={formData.upperTitle} onChange={(e) => setFormData({...formData, upperTitle: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm outline-none" placeholder="Contoh: Sekretaris Daerah" />
+                         </div>
+                     )}
+                     {formData.signatureType === 'UB' && (
+                         <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Jabatan Menjabat (Baris 2)</label>
+                            <input type="text" value={formData.intermediateTitle} onChange={(e) => setFormData({...formData, intermediateTitle: e.target.value})} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm outline-none" placeholder="Contoh: Asisten Administrasi" />
+                         </div>
+                     )}
+                  </div>
+                  <div className="mt-3">
+                     <label className="block text-sm font-semibold text-slate-700 mb-1">Pejabat Penandatangan</label>
+                     <select required value={formData.signatoryId} onChange={(e) => setFormData({...formData, signatoryId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm outline-none">
+                        <option value="">-- Pilih Pejabat --</option>
+                        {signatories.map(sig => {
+                            const emp = employees.find(e => e.id === sig.employeeId);
+                            return <option key={sig.id} value={sig.id}>{emp?.name} ({sig.role})</option>
+                        })}
+                     </select>
+                  </div>
+              </div>
+
+            </form>
+            <div className="p-6 border-t bg-slate-50 rounded-b-2xl flex justify-end space-x-3">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors">Batal</button>
+                <button type="button" onClick={handleSave} className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">Simpan Dokumen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT MODAL */}
+      {isPrintModalOpen && printingTask && (
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col h-screen w-screen overflow-hidden">
+             <div className="bg-slate-800 text-white p-4 flex justify-between items-center shadow-md print:hidden">
+                 <h2 className="text-lg font-bold flex items-center"><Printer className="mr-2"/> Pratinjau Cetak Surat Tugas</h2>
+                 <div className="flex items-center space-x-3">
+                     <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold text-sm transition-colors">Cetak Sekarang</button>
+                     <button onClick={() => setIsPrintModalOpen(false)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold text-sm transition-colors">Tutup</button>
+                 </div>
+             </div>
+             
+             <div className="flex-1 overflow-auto bg-slate-100 p-8 print:p-0 print:bg-white print:overflow-visible">
+                 <div className="max-w-[210mm] mx-auto bg-white p-[20mm] shadow-xl print:shadow-none print:w-full print:max-w-none print:mx-0">
+                     {/* Kop Surat */}
+                     <div className="flex items-center border-b-[3px] border-black pb-4 mb-6">
+                        <div className="w-24 flex-shrink-0 flex justify-center">
+                            <img src={agencySettings.logoUrl} alt="Logo" className="h-24 w-auto object-contain" />
+                        </div>
+                        <div className="flex-1 text-center px-4">
+                            <h3 className="text-lg font-medium tracking-wide uppercase leading-tight font-serif">{agencySettings.name}</h3>
+                            <h1 className="text-2xl font-bold tracking-wider uppercase leading-tight font-serif mt-1">{agencySettings.department}</h1>
+                            <p className="text-xs mt-2 font-serif">{agencySettings.address}</p>
+                            <p className="text-xs font-serif">{agencySettings.contactInfo}</p>
+                        </div>
+                     </div>
+
+                     <div className="text-center mb-8">
+                         <h2 className="text-xl font-bold underline uppercase decoration-2 underline-offset-4">SURAT TUGAS</h2>
+                         <p className="text-sm mt-1">Nomor : {printingTask.number}</p>
+                     </div>
+
+                     <div className="space-y-6 text-justify leading-relaxed font-serif text-[12pt]">
+                         <div className="flex items-start">
+                             <div className="w-32 flex-shrink-0">Dasar</div>
+                             <div className="w-4 flex-shrink-0 text-center">:</div>
+                             <div className="flex-1 whitespace-pre-line">{printingTask.basis}</div>
+                         </div>
+
+                         <div className="text-center font-bold my-4">MEMERINTAHKAN:</div>
+
+                         <div className="flex items-start">
+                             <div className="w-32 flex-shrink-0">Kepada</div>
+                             <div className="w-4 flex-shrink-0 text-center">:</div>
+                             <div className="flex-1">
+                                 <table className="w-full border-collapse">
+                                     <tbody>
+                                         {printingTask.employeeIds.map((empId, idx) => {
+                                             const emp = employees.find(e => e.id === empId);
+                                             return (
+                                                 <tr key={empId} className="align-top">
+                                                     <td className="w-6 py-1">{idx + 1}.</td>
+                                                     <td className="w-32 py-1">Nama</td>
+                                                     <td className="w-4 text-center py-1">:</td>
+                                                     <td className="py-1 font-bold">{emp?.name}</td>
+                                                 </tr>
+                                             );
+                                         })}
+                                     </tbody>
+                                 </table>
+                             </div>
+                         </div>
+
+                         <div className="flex items-start">
+                             <div className="w-32 flex-shrink-0">Untuk</div>
+                             <div className="w-4 flex-shrink-0 text-center">:</div>
+                             <div className="flex-1">
+                                 <ol className="list-decimal pl-4 space-y-2">
+                                     <li>
+                                         <span className="font-bold">Maksud:</span> {printingTask.subject}.
+                                     </li>
+                                     <li>
+                                         <span className="font-bold">Tujuan:</span> {cities.find(c => c.id === printingTask.destinationId)?.name}.
+                                         {printingTask.destinationAddress && <span> ({printingTask.destinationAddress})</span>}
+                                     </li>
+                                     <li>
+                                         <span className="font-bold">Waktu:</span> {printingTask.duration} hari, 
+                                         Terhitung mulai tanggal {new Date(printingTask.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})} s/d {new Date(printingTask.endDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}.
+                                     </li>
+                                     <li>
+                                         Melaporkan hasil pelaksanaan tugas kepada atasan.
+                                     </li>
+                                 </ol>
+                             </div>
+                         </div>
+                         
+                         <div className="mt-8">
+                             <p>Demikian Surat Tugas ini dibuat untuk dilaksanakan dengan penuh tanggung jawab.</p>
+                         </div>
+                     </div>
+
+                     <div className="mt-16 flex justify-end">
+                         <div className="w-80 text-center font-serif text-[12pt]">
+                             <p className="mb-1">Ditetapkan di Demak</p>
+                             <p className="mb-4">Pada Tanggal {new Date(printingTask.date).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+                             
+                             {/* Dynamic Signature Block */}
+                             {(() => {
+                                 const sig = signatories.find(s => s.id === printingTask.signatoryId);
+                                 const sigEmp = employees.find(e => e.id === sig?.employeeId);
+                                 
+                                 if(printingTask.signatureType === 'AN') {
+                                     return (
+                                         <>
+                                            <p className="font-bold">a.n. {printingTask.upperTitle || 'BUPATI DEMAK'}</p>
+                                            <p className="font-bold mb-20">{sig?.role}</p>
+                                            <p className="font-bold underline text-sm">{sigEmp?.name}</p>
+                                            <p className="text-sm">{sigEmp?.grade}</p>
+                                            <p className="text-sm">NIP. {sigEmp?.nip}</p>
+                                         </>
+                                     );
+                                 } else if (printingTask.signatureType === 'UB') {
+                                     return (
+                                         <>
+                                            <p className="font-bold">a.n. {printingTask.upperTitle || 'BUPATI DEMAK'}</p>
+                                            <p className="font-bold">{printingTask.intermediateTitle || 'SEKRETARIS DAERAH'}</p>
+                                            <p className="mb-2">u.b.</p>
+                                            <p className="font-bold mb-16">{sig?.role}</p>
+                                            <p className="font-bold underline text-sm">{sigEmp?.name}</p>
+                                            <p className="text-sm">{sigEmp?.grade}</p>
+                                            <p className="text-sm">NIP. {sigEmp?.nip}</p>
+                                         </>
+                                     );
+                                 } else {
+                                     return (
+                                         <>
+                                            <p className="font-bold mb-20">{sig?.role?.toUpperCase()}</p>
+                                            <p className="font-bold underline text-sm">{sigEmp?.name}</p>
+                                            <p className="text-sm">{sigEmp?.grade}</p>
+                                            <p className="text-sm">NIP. {sigEmp?.nip}</p>
+                                         </>
+                                     );
+                                 }
+                             })()}
+                         </div>
+                     </div>
+                 </div>
+             </div>
+        </div>
+      )}
     </div>
   );
 };
