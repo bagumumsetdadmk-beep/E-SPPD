@@ -155,7 +155,8 @@ const AssignmentManager: React.FC = () => {
     // Permission: Admin OR Operator
     if (!isAdmin && !isOperator) return;
     
-    loadMasterData();
+    // Removed loadMasterData() here to prevent re-render issues/race conditions
+    
     if (task) {
       setEditingTask(task);
       setFormData({
@@ -292,6 +293,7 @@ const AssignmentManager: React.FC = () => {
             {/* Create Button: OPS & Admin Only */}
             {(isAdmin || isOperator) && (
               <button 
+                type="button"
                 onClick={() => handleOpenModal()}
                 className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all font-bold"
               >
