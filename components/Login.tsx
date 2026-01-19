@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserCog, LogIn, User as UserIcon } from 'lucide-react';
-import { UserRole } from '../types';
+import { createClient } from '@supabase/supabase-js';
+import { UserRole, AgencySettings } from '../types';
 
 interface LoginProps {
   onLogin: (role: UserRole, name: string) => void;
@@ -10,6 +11,60 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
+  const [settings, setSettings] = useState<AgencySettings | null>(null);
+
+  // Helper untuk koneksi Supabase
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    // 1. Coba load dari LocalStorage (Cepat)
+    const savedSettings = localStorage.getItem('agency_settings');
+    if (savedSettings) {
+      try {
+        setSettings(JSON.parse(savedSettings));
+      } catch (e) {
+        console.error("Failed to parse settings", e);
+      }
+    }
+
+    // 2. Coba fetch dari Database (Fresh)
+    const fetchSettingsFromDb = async () => {
+        const client = getSupabase();
+        if (client) {
+            try {
+                const { data, error } = await client.from('agency_settings').select('*').limit(1).maybeSingle();
+                if (data) {
+                    const newSettings: AgencySettings = {
+                        name: data.name,
+                        department: data.department,
+                        address: data.address,
+                        contactInfo: data.contact_info,
+                        logoUrl: data.logo_url
+                    };
+                    setSettings(newSettings);
+                    // Update Local Storage agar sinkron
+                    localStorage.setItem('agency_settings', JSON.stringify(newSettings));
+                }
+            } catch (e) {
+                console.error("DB Fetch Error", e);
+            }
+        }
+    };
+    fetchSettingsFromDb();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,11 +91,25 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="max-w-md w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
         
         <div className="text-center mb-8">
-           <div className="inline-flex items-center justify-center p-4 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 mb-6">
-              <UserCog size={40} className="text-white" />
-           </div>
+           {settings?.logoUrl ? (
+             <div className="mb-6 flex justify-center">
+                <img 
+                  src={settings.logoUrl} 
+                  alt="Logo Instansi" 
+                  className="h-28 w-auto object-contain drop-shadow-xl"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} 
+                />
+             </div>
+           ) : (
+             <div className="inline-flex items-center justify-center p-4 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 mb-6">
+                <UserCog size={40} className="text-white" />
+             </div>
+           )}
+           
            <h1 className="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">E-SPPD System</h1>
-           <p className="text-slate-500 text-sm">Sistem Informasi Manajemen Perjalanan Dinas</p>
+           <p className="text-slate-500 text-sm font-medium">
+             {settings ? settings.department : 'Sistem Informasi Manajemen Perjalanan Dinas'}
+           </p>
         </div>
 
         <div className="bg-white p-8 rounded-3xl shadow-xl border border-white/50 backdrop-blur-sm">
@@ -82,7 +151,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
            <div className="mt-8 pt-6 border-t text-center">
               <p className="text-xs text-slate-400">
-                &copy; {new Date().getFullYear()} Pemerintah Kabupaten Demak.<br/>
+                &copy; {new Date().getFullYear()} {settings ? settings.name : 'Pemerintah Kabupaten Demak'}.<br/>
                 Sistem Login Internal Tanpa Password
               </p>
            </div>

@@ -20,6 +20,7 @@ import {
   UserCheck,
   Settings
 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
 import Dashboard from './components/Dashboard';
 import EmployeeManager from './components/EmployeeManager';
@@ -34,7 +35,7 @@ import ReceiptManager from './components/ReceiptManager';
 import RecapManager from './components/RecapManager';
 import SettingsManager from './components/SettingsManager';
 import Login from './components/Login';
-import { User, UserRole } from './types';
+import { User, UserRole, AgencySettings } from './types';
 
 // Fixed SidebarItem typing by using React.FC which includes standard React attributes like 'key'
 const SidebarItem: React.FC<{ to: string, icon: any, label: string, active: boolean }> = ({ to, icon: Icon, label, active }) => (
@@ -52,8 +53,26 @@ const SidebarItem: React.FC<{ to: string, icon: any, label: string, active: bool
 const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [agencyLogo, setAgencyLogo] = useState<string | null>(null);
+  
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Helper untuk koneksi Supabase
+  const getSupabase = () => {
+    const env = (import.meta as any).env;
+    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
+      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
+    }
+    const saved = localStorage.getItem('supabase_config');
+    if (saved) {
+      try {
+        const config = JSON.parse(saved);
+        if (config.url && config.key) return createClient(config.url, config.key);
+      } catch (e) {}
+    }
+    return null;
+  };
 
   // Check login status on mount
   useEffect(() => {
@@ -61,6 +80,34 @@ const App: React.FC = () => {
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
+
+    // 1. Load Local Logo
+    const savedSettings = localStorage.getItem('agency_settings');
+    if (savedSettings) {
+      try {
+        const parsed: AgencySettings = JSON.parse(savedSettings);
+        setAgencyLogo(parsed.logoUrl);
+      } catch (e) {}
+    }
+
+    // 2. Fetch DB Logo (Ensure Freshness)
+    const fetchLogo = async () => {
+        const client = getSupabase();
+        if (client) {
+            try {
+                const { data } = await client.from('agency_settings').select('logo_url').limit(1).maybeSingle();
+                if (data && data.logo_url) {
+                    setAgencyLogo(data.logo_url);
+                    // Update Local Storage
+                    const currentLocal = localStorage.getItem('agency_settings');
+                    let parsed = currentLocal ? JSON.parse(currentLocal) : {};
+                    parsed.logoUrl = data.logo_url;
+                    localStorage.setItem('agency_settings', JSON.stringify(parsed));
+                }
+            } catch(e) {}
+        }
+    };
+    fetchLogo();
   }, []);
 
   const handleLogin = (role: UserRole, name: string) => {
@@ -135,10 +182,16 @@ const App: React.FC = () => {
       >
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-6">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
-                <FileText className="text-white" size={20} />
-              </div>
+            <div className="flex items-center space-x-3">
+              {agencyLogo ? (
+                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center p-1">
+                   <img src={agencyLogo} alt="Logo" className="w-full h-full object-contain" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+                  <FileText className="text-white" size={20} />
+                </div>
+              )}
               <h1 className="text-xl font-bold text-white tracking-tight">E-SPPD</h1>
             </div>
             <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400">
