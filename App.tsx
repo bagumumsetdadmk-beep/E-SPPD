@@ -15,7 +15,6 @@ import {
   X,
   Bell,
   Search,
-  ChevronRight,
   LogOut,
   UserCheck,
   Settings
@@ -31,13 +30,11 @@ import FundingManager from './components/FundingManager';
 import AssignmentManager from './components/AssignmentManager';
 import SPPDManager from './components/SPPDManager';
 import ReceiptManager from './components/ReceiptManager';
-// ReportManager removed
 import RecapManager from './components/RecapManager';
 import SettingsManager from './components/SettingsManager';
 import Login from './components/Login';
 import { User, UserRole, AgencySettings } from './types';
 
-// Fixed SidebarItem typing by using React.FC which includes standard React attributes like 'key'
 const SidebarItem: React.FC<{ to: string, icon: any, label: string, active: boolean }> = ({ to, icon: Icon, label, active }) => (
   <Link 
     to={to} 
@@ -58,7 +55,6 @@ const App: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Helper untuk koneksi Supabase
   const getSupabase = () => {
     const env = (import.meta as any).env;
     if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
@@ -74,14 +70,12 @@ const App: React.FC = () => {
     return null;
   };
 
-  // Check login status on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
 
-    // 1. Load Local Logo
     const savedSettings = localStorage.getItem('agency_settings');
     if (savedSettings) {
       try {
@@ -90,7 +84,6 @@ const App: React.FC = () => {
       } catch (e) {}
     }
 
-    // 2. Fetch DB Logo (Ensure Freshness)
     const fetchLogo = async () => {
         const client = getSupabase();
         if (client) {
@@ -98,11 +91,6 @@ const App: React.FC = () => {
                 const { data } = await client.from('agency_settings').select('logo_url').limit(1).maybeSingle();
                 if (data && data.logo_url) {
                     setAgencyLogo(data.logo_url);
-                    // Update Local Storage
-                    const currentLocal = localStorage.getItem('agency_settings');
-                    let parsed = currentLocal ? JSON.parse(currentLocal) : {};
-                    parsed.logoUrl = data.logo_url;
-                    localStorage.setItem('agency_settings', JSON.stringify(parsed));
                 }
             } catch(e) {}
         }
@@ -127,32 +115,32 @@ const App: React.FC = () => {
     navigate('/');
   };
 
+  const isAdmin = user?.role === 'Admin';
+
   const menuItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/pegawai', icon: Users, label: 'Data Pegawai' },
-    { to: '/penandatangan', icon: UserCheck, label: 'Pejabat Penandatangan' },
-    { to: '/kota', icon: MapPin, label: 'Kota Tujuan' },
-    { to: '/transportasi', icon: Bus, label: 'Moda Transportasi' },
-    { to: '/dana', icon: Wallet, label: 'Sumber Dana' },
-    { to: '/surat-tugas', icon: FileText, label: 'Surat Tugas' },
-    { to: '/sppd', icon: ClipboardList, label: 'SPPD' },
-    { to: '/kwitansi', icon: ReceiptIcon, label: 'Rincian Biaya' }, // Changed Label
-    // Laporan Perjalanan removed
-    { to: '/rekap', icon: BarChart3, label: 'Rekap Data' },
-    { to: '/pengaturan', icon: Settings, label: 'Pengaturan' },
+    { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Operator', 'Verificator'] },
+    { to: '/pegawai', icon: Users, label: 'Data Pegawai', roles: ['Admin'] },
+    { to: '/penandatangan', icon: UserCheck, label: 'Pejabat Penandatangan', roles: ['Admin'] },
+    { to: '/kota', icon: MapPin, label: 'Kota Tujuan', roles: ['Admin'] },
+    { to: '/transportasi', icon: Bus, label: 'Moda Transportasi', roles: ['Admin'] },
+    { to: '/dana', icon: Wallet, label: 'Sumber Dana', roles: ['Admin'] },
+    { to: '/surat-tugas', icon: FileText, label: 'Surat Tugas', roles: ['Admin', 'Operator', 'Verificator'] },
+    { to: '/sppd', icon: ClipboardList, label: 'SPPD', roles: ['Admin', 'Operator', 'Verificator'] },
+    { to: '/kwitansi', icon: ReceiptIcon, label: 'Rincian Biaya', roles: ['Admin', 'Operator', 'Verificator'] },
+    { to: '/rekap', icon: BarChart3, label: 'Rekap Data', roles: ['Admin', 'Operator', 'Verificator'] },
+    { to: '/pengaturan', icon: Settings, label: 'Pengaturan', roles: ['Admin'] },
   ];
 
-  // If not logged in, show Login Screen
+  const filteredMenuItems = menuItems.filter(item => item.roles.includes(user?.role || ''));
+
   if (!user) {
     return <Login onLogin={handleLogin} />;
   }
 
-  // Get initials for avatar
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
-  // Get Role Badge Color
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
       case 'Admin': return 'bg-indigo-500 text-white';
@@ -164,7 +152,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans">
-      {/* Mobile Sidebar Overlay */}
       {!sidebarOpen && (
         <button 
           onClick={() => setSidebarOpen(true)}
@@ -174,7 +161,6 @@ const App: React.FC = () => {
         </button>
       )}
 
-      {/* Sidebar */}
       <aside 
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 transition-transform duration-300 transform lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -201,25 +187,7 @@ const App: React.FC = () => {
 
           <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-4">Menu Utama</p>
-            {menuItems.slice(0, 6).map((item) => (
-              <SidebarItem 
-                key={item.to} 
-                {...item} 
-                active={location.pathname === item.to} 
-              />
-            ))}
-            
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Administrasi SPPD</p>
-            {menuItems.slice(6, 9).map((item) => (
-              <SidebarItem 
-                key={item.to} 
-                {...item} 
-                active={location.pathname === item.to} 
-              />
-            ))}
-
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistem</p>
-            {menuItems.slice(9).map((item) => (
+            {filteredMenuItems.map((item) => (
               <SidebarItem 
                 key={item.to} 
                 {...item} 
@@ -249,7 +217,6 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
         <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
           <div className="flex items-center space-x-4">
