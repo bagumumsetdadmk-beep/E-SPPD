@@ -127,7 +127,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         setError('');
                       }}
                       className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none text-slate-900"
-                      placeholder="admin / ops / verifikator"
+                      placeholder=""
                       autoFocus
                     />
                  </div>
@@ -151,7 +151,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
            <div className="mt-8 pt-6 border-t text-center">
               <p className="text-xs text-slate-400">
                 &copy; {new Date().getFullYear()} {settings ? settings.name : 'Pemerintah Kabupaten Demak'}.<br/>
-                Login menggunakan akun resmi instansi
               </p>
            </div>
         </div>

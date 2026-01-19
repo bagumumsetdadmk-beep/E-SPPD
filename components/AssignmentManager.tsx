@@ -193,7 +193,8 @@ const AssignmentManager: React.FC = () => {
   };
 
   const handleOpenPrint = (task: AssignmentLetter) => {
-    if (!isAdmin) return;
+    // Modified: Allow Admin OR Operator to print
+    if (user?.role !== 'Admin' && user?.role !== 'Operator') return;
     setPrintingTask(task);
     setIsPrintModalOpen(true);
   };
@@ -331,28 +332,34 @@ const AssignmentManager: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end items-center space-x-1">
+                        
+                        {/* Approval Actions: Admin Only */}
+                        {isAdmin && task.status !== 'Approved' && task.status !== 'Rejected' && (
+                            <div className="flex border-r pr-2 mr-1 space-x-1">
+                              <button onClick={() => handleUpdateStatus(task.id, task.status === 'Pending' ? 'Verified' : 'Approved')} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><Check size={16} /></button>
+                              <button onClick={() => handleUpdateStatus(task.id, 'Rejected')} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><XCircle size={16} /></button>
+                            </div>
+                        )}
+                        
+                        {/* Print Button: Admin OR Operator (When Approved) */}
+                        {isApproved && (isAdmin || user?.role === 'Operator') && (
+                            <button onClick={() => handleOpenPrint(task)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg" title="Cetak Surat Tugas">
+                                <Printer size={16} />
+                            </button>
+                        )}
+                        
+                        {/* CRUD Buttons: Admin Only */}
                         {isAdmin && (
                           <>
-                            <div className="flex border-r pr-2 mr-1 space-x-1">
-                              {task.status !== 'Approved' && task.status !== 'Rejected' && (
-                                <>
-                                  <button onClick={() => handleUpdateStatus(task.id, task.status === 'Pending' ? 'Verified' : 'Approved')} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><Check size={16} /></button>
-                                  <button onClick={() => handleUpdateStatus(task.id, 'Rejected')} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><XCircle size={16} /></button>
-                                </>
-                              )}
-                            </div>
-                            {isApproved && (
-                              <button onClick={() => handleOpenPrint(task)} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><Printer size={16} /></button>
-                            )}
-                            {!isApproved && (
-                              <>
-                                <button onClick={() => handleOpenModal(task)} className="p-1.5 text-indigo-600"><Edit2 size={16} /></button>
-                                <button onClick={() => {setItemToDelete(task.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600"><Trash2 size={16} /></button>
-                              </>
-                            )}
+                            <button onClick={() => handleOpenModal(task)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
+                            <button onClick={() => {setItemToDelete(task.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
                           </>
                         )}
-                        {!isAdmin && <span className="text-xs text-slate-400">View Only</span>}
+
+                        {/* View Only: Non-Admin AND (Not Operator OR Not Approved) */}
+                        {!isAdmin && !(isApproved && user?.role === 'Operator') && (
+                            <span className="text-xs text-slate-400">View Only</span>
+                        )}
                       </div>
                     </td>
                   </tr>
