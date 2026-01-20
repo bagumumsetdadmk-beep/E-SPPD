@@ -14,7 +14,7 @@ import {
   User, 
   MapPin, 
   Printer, 
-  DollarSign,
+  Banknote,
   RefreshCw
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
@@ -204,8 +204,13 @@ const SPPDManager: React.FC = () => {
                   <div className="flex space-x-1">
                     {isAdmin && (
                       <>
-                        <button onClick={() => navigate('/kwitansi', { state: { createSppdId: s.id } })} className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg"><DollarSign size={16} /></button>
-                        <button onClick={() => {setItemToDelete(s.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600"><Trash2 size={16}/></button>
+                        {/* Changed DollarSign to Banknote */}
+                        <button onClick={() => navigate('/kwitansi', { state: { createSppdId: s.id } })} className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-200" title="Rincian Biaya">
+                            <Banknote size={16} />
+                        </button>
+                        <button onClick={() => {setItemToDelete(s.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title="Hapus">
+                            <Trash2 size={16}/>
+                        </button>
                       </>
                     )}
                   </div>
@@ -314,7 +319,9 @@ const SPPDManager: React.FC = () => {
                            const funding = fundingSources.find(f => f.id === printingSppd.fundingId);
                            const city = cities.find(c => c.id === task?.destinationId);
                            const signatory = signatories.find(s => s.id === task?.signatoryId);
-                           const sigEmp = employees.find(e => e.id === signatory?.employeeId);
+                           
+                           // Find the PPK or KPA
+                           const ppk = signatories.find(s => s.role.includes('Komitmen') || s.role.includes('Pengguna')) || signatory;
 
                            return (
                                <table className="w-full border border-black border-collapse">
@@ -322,7 +329,7 @@ const SPPDManager: React.FC = () => {
                                        <tr>
                                            <td className="border border-black p-2 w-10 text-center">1.</td>
                                            <td className="border border-black p-2 w-1/3">Pejabat Pembuat Komitmen</td>
-                                           <td className="border border-black p-2 font-bold">{signatories.find(s => s.role.includes('Komitmen') || s.role.includes('Pengguna'))?.role || 'Kuasa Pengguna Anggaran'}</td>
+                                           <td className="border border-black p-2 font-bold">{ppk?.role || 'Kuasa Pengguna Anggaran'}</td>
                                        </tr>
                                        <tr>
                                            <td className="border border-black p-2 text-center">2.</td>
@@ -372,8 +379,8 @@ const SPPDManager: React.FC = () => {
                                            </td>
                                            <td className="border border-black p-2">
                                                a. {task?.duration} (Hari)<br/>
-                                               b. {printingSppd.startDate}<br/>
-                                               c. {printingSppd.endDate}
+                                               b. {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}<br/>
+                                               c. {new Date(printingSppd.endDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
                                            </td>
                                        </tr>
                                        <tr>
@@ -398,11 +405,97 @@ const SPPDManager: React.FC = () => {
                      <div className="mt-8 flex justify-end">
                          <div className="w-80 text-center font-serif text-[11pt]">
                              <p className="mb-1">Ditetapkan di Demak</p>
-                             <p className="mb-4">Pada Tanggal {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+                             <p className="mb-4">Pada Tanggal {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
                              <p className="font-bold mb-20">PEJABAT PEMBUAT KOMITMEN</p>
                              <p className="font-bold underline text-sm">( ..................................................... )</p>
                              <p className="text-sm">NIP. ..........................................</p>
                          </div>
+                     </div>
+
+                     {/* HALAMAN 2: VISUM */}
+                     <div className="break-before-page mt-12 pt-8">
+                        <div className="font-serif text-[11pt]">
+                            <div className="grid grid-cols-2 gap-0 border border-black">
+                                {/* KOLOM KIRI */}
+                                <div className="border-r border-black p-4 space-y-20">
+                                    <div></div> {/* Spacer */}
+                                    
+                                    <div>
+                                        <p>II. Tiba di: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
+                                        <p>Pada Tanggal: ..............................</p>
+                                        <p className="mb-12">Kepala:</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+
+                                    <div>
+                                        <p>III. Tiba di: ..............................</p>
+                                        <p>Pada Tanggal: ..............................</p>
+                                        <p className="mb-12">Kepala:</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <p>IV. Tiba di: {agencySettings.name.replace('PEMERINTAH ','')}</p>
+                                        <p>Pada Tanggal: ..............................</p>
+                                        <p className="mb-12">Pejabat Pembuat Komitmen</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+                                </div>
+
+                                {/* KOLOM KANAN */}
+                                <div className="p-4 space-y-20">
+                                    <div>
+                                        <p>I. Berangkat dari: {agencySettings.name.replace('PEMERINTAH ','')}</p>
+                                        <p>(Tempat Kedudukan)</p>
+                                        <p>Ke: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
+                                        <p>Pada Tanggal: {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+                                        <p className="mb-12">Pejabat Pembuat Komitmen</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+
+                                    <div>
+                                        <p>Berangkat dari: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
+                                        <p>Ke: ..............................</p>
+                                        <p>Pada Tanggal: ..............................</p>
+                                        <p className="mb-12">Kepala:</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+
+                                    <div>
+                                        <p>Berangkat dari: ..............................</p>
+                                        <p>Ke: ..............................</p>
+                                        <p>Pada Tanggal: ..............................</p>
+                                        <p className="mb-12">Kepala:</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <p className="text-justify text-xs">
+                                            Telah diperiksa dengan keterangan bahwa perjalanan tersebut diatas
+                                            benar dilakukan atas perintahnya dan semata-mata untuk kepentingan
+                                            jabatan dalam waktu yang sesingkat-singkatnya.
+                                        </p>
+                                        <p className="mb-12 mt-4">Pejabat Pembuat Komitmen</p>
+                                        <p className="font-bold underline">(.............................................)</p>
+                                        <p>NIP.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4 border border-black p-4">
+                                <p className="font-bold underline mb-2">V. CATATAN LAIN-LAIN</p>
+                                <p>VII. PERHATIAN:</p>
+                                <p className="text-xs">
+                                    PPK yang menerbitkan SPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat/tiba, serta bendahara pengeluaran bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila negara menderita rugi akibat kesalahan, kelalaian, dan kealpaannya.
+                                </p>
+                            </div>
+                        </div>
                      </div>
                  </div>
              </div>
