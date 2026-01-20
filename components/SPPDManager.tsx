@@ -224,6 +224,190 @@ const SPPDManager: React.FC = () => {
         </div>
       </div>
       <ConfirmationModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete} title="Hapus SPPD" message="Hapus data?" />
+    
+      {/* SPPD CREATE MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="p-6 border-b flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-900">Terbitkan SPPD Baru</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleSave} className="p-6 space-y-4">
+              <div>
+                 <label className="block text-sm font-semibold text-slate-700 mb-1">Nomor SPPD</label>
+                 <input type="text" required value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm" />
+              </div>
+              <div>
+                 <label className="block text-sm font-semibold text-slate-700 mb-1">Referensi Surat Tugas</label>
+                 <input type="text" readOnly value={formData.ref} className="w-full px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl text-sm text-slate-500" />
+              </div>
+              <div>
+                 <label className="block text-sm font-semibold text-slate-700 mb-1">Pegawai</label>
+                 <textarea readOnly value={formData.displayEmployeeNames} className="w-full px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl text-sm text-slate-500" rows={2}/>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Moda Transportasi</label>
+                    <select required value={formData.transportId} onChange={(e) => setFormData({...formData, transportId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm">
+                        <option value="">-- Pilih --</option>
+                        {transportModes.map(m => <option key={m.id} value={m.id}>{m.type}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Sumber Dana</label>
+                    <select required value={formData.fundingId} onChange={(e) => setFormData({...formData, fundingId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm">
+                        <option value="">-- Pilih --</option>
+                        {fundingSources.map(f => <option key={f.id} value={f.id}>{f.code}</option>)}
+                    </select>
+                  </div>
+              </div>
+              <div className="pt-4">
+                 <button type="submit" className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700">Simpan & Terbitkan</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT MODAL SPPD - USING FULL IMAGE HEADER */}
+      {isPrintModalOpen && printingSppd && (
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col h-screen w-screen overflow-hidden">
+             <div className="bg-slate-800 text-white p-4 flex justify-between items-center shadow-md print:hidden">
+                 <h2 className="text-lg font-bold flex items-center"><Printer className="mr-2"/> Pratinjau Cetak SPPD</h2>
+                 <div className="flex items-center space-x-3">
+                     <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold text-sm transition-colors">Cetak Sekarang</button>
+                     <button onClick={() => setIsPrintModalOpen(false)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold text-sm transition-colors">Tutup</button>
+                 </div>
+             </div>
+             
+             <div className="flex-1 overflow-auto bg-slate-100 p-8 print:p-0 print:bg-white print:overflow-visible">
+                 <div className="max-w-[210mm] mx-auto bg-white p-[20mm] shadow-xl print:shadow-none print:w-full print:max-w-none print:mx-0">
+                     
+                     {/* FULL WIDTH IMAGE HEADER (Updated to use kopSuratUrl) */}
+                     <div className="mb-6 w-full">
+                         {agencySettings.kopSuratUrl ? (
+                             <img 
+                               src={agencySettings.kopSuratUrl} 
+                               alt="Kop Surat" 
+                               className="w-full h-auto object-contain max-h-[150px] mx-auto" 
+                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                             />
+                         ) : (
+                             <div className="w-full text-center p-4 border border-dashed text-slate-400">
+                                 [Kop Surat Belum Diatur]
+                             </div>
+                         )}
+                     </div>
+
+                     <div className="text-center mb-8">
+                         <h2 className="text-xl font-bold underline uppercase decoration-2 underline-offset-4">SURAT PERJALANAN DINAS (SPD)</h2>
+                         <p className="text-sm mt-1 font-bold">Nomor : {printingSppd.id}</p>
+                     </div>
+
+                     <div className="space-y-4 font-serif text-[11pt]">
+                        {(() => {
+                           const task = assignments.find(a => a.id === printingSppd.assignmentId);
+                           const empId = task?.employeeIds[0]; // Assuming first employee for simple SPPD print
+                           const emp = employees.find(e => e.id === empId);
+                           const transport = transportModes.find(t => t.id === printingSppd.transportId);
+                           const funding = fundingSources.find(f => f.id === printingSppd.fundingId);
+                           const city = cities.find(c => c.id === task?.destinationId);
+                           const signatory = signatories.find(s => s.id === task?.signatoryId);
+                           const sigEmp = employees.find(e => e.id === signatory?.employeeId);
+
+                           return (
+                               <table className="w-full border border-black border-collapse">
+                                   <tbody>
+                                       <tr>
+                                           <td className="border border-black p-2 w-10 text-center">1.</td>
+                                           <td className="border border-black p-2 w-1/3">Pejabat Pembuat Komitmen</td>
+                                           <td className="border border-black p-2 font-bold">{signatories.find(s => s.role.includes('Komitmen') || s.role.includes('Pengguna'))?.role || 'Kuasa Pengguna Anggaran'}</td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">2.</td>
+                                           <td className="border border-black p-2">Nama Pegawai yang diperintah</td>
+                                           <td className="border border-black p-2 font-bold">{emp?.name}</td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">3.</td>
+                                           <td className="border border-black p-2">
+                                               a. Pangkat dan Golongan<br/>
+                                               b. Jabatan / Instansi<br/>
+                                               c. Tingkat Biaya Perjalanan Dinas
+                                           </td>
+                                           <td className="border border-black p-2">
+                                               a. {emp?.grade}<br/>
+                                               b. {emp?.position}<br/>
+                                               c. -
+                                           </td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">4.</td>
+                                           <td className="border border-black p-2">Maksud Perjalanan Dinas</td>
+                                           <td className="border border-black p-2">{task?.subject}</td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">5.</td>
+                                           <td className="border border-black p-2">Alat Angkutan yang dipergunakan</td>
+                                           <td className="border border-black p-2">{transport?.type || '-'}</td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">6.</td>
+                                           <td className="border border-black p-2">
+                                               a. Tempat Berangkat<br/>
+                                               b. Tempat Tujuan
+                                           </td>
+                                           <td className="border border-black p-2">
+                                               a. {agencySettings.name.replace('PEMERINTAH ', '')}<br/>
+                                               b. {city?.name}
+                                           </td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">7.</td>
+                                           <td className="border border-black p-2">
+                                               a. Lamanya Perjalanan Dinas<br/>
+                                               b. Tanggal Berangkat<br/>
+                                               c. Tanggal Harus Kembali
+                                           </td>
+                                           <td className="border border-black p-2">
+                                               a. {task?.duration} (Hari)<br/>
+                                               b. {printingSppd.startDate}<br/>
+                                               c. {printingSppd.endDate}
+                                           </td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">8.</td>
+                                           <td className="border border-black p-2">Pembebanan Anggaran</td>
+                                           <td className="border border-black p-2">
+                                               a. Instansi: {agencySettings.department}<br/>
+                                               b. Mata Anggaran: {funding?.code}
+                                           </td>
+                                       </tr>
+                                       <tr>
+                                           <td className="border border-black p-2 text-center">9.</td>
+                                           <td className="border border-black p-2">Keterangan Lain-lain</td>
+                                           <td className="border border-black p-2">Lihat Sebelah</td>
+                                       </tr>
+                                   </tbody>
+                               </table>
+                           );
+                        })()}
+                     </div>
+
+                     <div className="mt-8 flex justify-end">
+                         <div className="w-80 text-center font-serif text-[11pt]">
+                             <p className="mb-1">Ditetapkan di Demak</p>
+                             <p className="mb-4">Pada Tanggal {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
+                             <p className="font-bold mb-20">PEJABAT PEMBUAT KOMITMEN</p>
+                             <p className="font-bold underline text-sm">( ..................................................... )</p>
+                             <p className="text-sm">NIP. ..........................................</p>
+                         </div>
+                     </div>
+                 </div>
+             </div>
+        </div>
+      )}
     </div>
   );
 };

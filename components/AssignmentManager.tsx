@@ -564,17 +564,20 @@ const AssignmentManager: React.FC = () => {
              
              <div className="flex-1 overflow-auto bg-slate-100 p-8 print:p-0 print:bg-white print:overflow-visible">
                  <div className="max-w-[210mm] mx-auto bg-white p-[20mm] shadow-xl print:shadow-none print:w-full print:max-w-none print:mx-0">
-                     {/* Kop Surat */}
-                     <div className="flex items-center border-b-[3px] border-black pb-4 mb-6">
-                        <div className="w-24 flex-shrink-0 flex justify-center">
-                            <img src={agencySettings.logoUrl} alt="Logo" className="h-24 w-auto object-contain" />
-                        </div>
-                        <div className="flex-1 text-center px-4">
-                            <h3 className="text-lg font-medium tracking-wide uppercase leading-tight font-serif">{agencySettings.name}</h3>
-                            <h1 className="text-2xl font-bold tracking-wider uppercase leading-tight font-serif mt-1">{agencySettings.department}</h1>
-                            <p className="text-xs mt-2 font-serif">{agencySettings.address}</p>
-                            <p className="text-xs font-serif">{agencySettings.contactInfo}</p>
-                        </div>
+                     {/* Kop Surat Full Image (Updated to use kopSuratUrl) */}
+                     <div className="mb-6 w-full">
+                         {agencySettings.kopSuratUrl ? (
+                             <img 
+                               src={agencySettings.kopSuratUrl} 
+                               alt="Kop Surat" 
+                               className="w-full h-auto object-contain max-h-[150px] mx-auto" 
+                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                             />
+                         ) : (
+                             <div className="w-full text-center p-4 border border-dashed text-slate-400">
+                                 [Kop Surat Belum Diatur]
+                             </div>
+                         )}
                      </div>
 
                      <div className="text-center mb-8">

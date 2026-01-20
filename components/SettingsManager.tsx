@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe, FileCode, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe, FileCode, Loader2, AlertCircle, RefreshCw, FileImage } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { AgencySettings } from '../types';
 
@@ -9,11 +9,11 @@ const INITIAL_SETTINGS: AgencySettings = {
   department: 'SEKRETARIAT DAERAH',
   address: 'Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511',
   contactInfo: 'Telepon (0291) 685877, Faksimile (0291) 685625, Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id',
-  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png'
+  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png',
+  kopSuratUrl: ''
 };
 
 const SettingsManager: React.FC = () => {
-  // 1. Logic Prioritas Config Database (Env Var > LocalStorage)
   const getInitialDbConfig = () => {
     const env = (import.meta as any).env;
     const envUrl = env?.VITE_SUPABASE_URL;
@@ -47,9 +47,14 @@ const SettingsManager: React.FC = () => {
   });
 
   const [previewLogo, setPreviewLogo] = useState<string>(settings.logoUrl);
+  const [previewKop, setPreviewKop] = useState<string>(settings.kopSuratUrl || '');
+  
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingKop, setIsUploadingKop] = useState(false);
+  
   const [isLoadingData, setIsLoadingData] = useState(false);
   
   const [showSqlModal, setShowSqlModal] = useState(false);
@@ -74,7 +79,7 @@ const SettingsManager: React.FC = () => {
             .limit(1)
             .maybeSingle();
 
-          if (error && error.code !== 'PGRST116') throw error; // Ignore empty result error
+          if (error && error.code !== 'PGRST116') throw error; 
 
           if (data) {
               const newSettings: AgencySettings = {
@@ -82,10 +87,12 @@ const SettingsManager: React.FC = () => {
                   department: data.department,
                   address: data.address,
                   contactInfo: data.contact_info,
-                  logoUrl: data.logo_url || INITIAL_SETTINGS.logoUrl
+                  logoUrl: data.logo_url || INITIAL_SETTINGS.logoUrl,
+                  kopSuratUrl: data.kop_surat_url || ''
               };
               setSettings(newSettings);
               setPreviewLogo(newSettings.logoUrl);
+              setPreviewKop(newSettings.kopSuratUrl || '');
               localStorage.setItem('agency_settings', JSON.stringify(newSettings));
           }
       } catch (err: any) {
@@ -111,29 +118,21 @@ const SettingsManager: React.FC = () => {
                 .limit(1)
                 .maybeSingle();
 
+            const payload = {
+                name: settings.name,
+                department: settings.department,
+                address: settings.address,
+                contact_info: settings.contactInfo,
+                logo_url: settings.logoUrl,
+                kop_surat_url: settings.kopSuratUrl, // Save new field
+                updated_at: new Date()
+            };
+
             if (existing) {
-                const { error } = await supabase
-                    .from('agency_settings')
-                    .update({
-                        name: settings.name,
-                        department: settings.department,
-                        address: settings.address,
-                        contact_info: settings.contactInfo,
-                        logo_url: settings.logoUrl,
-                        updated_at: new Date()
-                    })
-                    .eq('id', existing.id);
+                const { error } = await supabase.from('agency_settings').update(payload).eq('id', existing.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase
-                    .from('agency_settings')
-                    .insert([{
-                        name: settings.name,
-                        department: settings.department,
-                        address: settings.address,
-                        contact_info: settings.contactInfo,
-                        logo_url: settings.logoUrl
-                    }]);
+                const { error } = await supabase.from('agency_settings').insert([payload]);
                 if (error) throw error;
             }
 
@@ -173,16 +172,22 @@ const SettingsManager: React.FC = () => {
       }
   };
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Generic function to handle uploads
+  const processUpload = async (
+      file: File, 
+      stateUpdater: (url: string) => void, 
+      loadingUpdater: (loading: boolean) => void,
+      previewUpdater: (url: string) => void,
+      filePrefix: string
+  ) => {
     if (!file) return;
 
     const useLocalFallback = () => {
         const reader = new FileReader();
         reader.onloadend = () => {
             const base64String = reader.result as string;
-            setSettings({ ...settings, logoUrl: base64String });
-            setPreviewLogo(base64String);
+            stateUpdater(base64String);
+            previewUpdater(base64String);
         };
         reader.readAsDataURL(file);
     };
@@ -193,11 +198,11 @@ const SettingsManager: React.FC = () => {
     }
 
     if (isDbConnected && dbConfig.url && dbConfig.key) {
-        setIsUploading(true);
+        loadingUpdater(true);
         try {
             const supabase = createClient(dbConfig.url, dbConfig.key);
             const fileExt = file.name.split('.').pop();
-            const fileName = `logo-${Date.now()}.${fileExt}`;
+            const fileName = `${filePrefix}-${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
             const { error: uploadError } = await supabase.storage
@@ -209,20 +214,45 @@ const SettingsManager: React.FC = () => {
             const { data } = supabase.storage.from('images').getPublicUrl(filePath);
 
             if (data.publicUrl) {
-                setSettings({ ...settings, logoUrl: data.publicUrl });
-                setPreviewLogo(data.publicUrl);
+                stateUpdater(data.publicUrl);
+                previewUpdater(data.publicUrl);
             }
-
         } catch (error: any) {
             console.error("Upload Error:", error);
-            alert(`Gagal upload ke Storage Cloud: ${error.message}. Menggunakan mode offline.`);
+            alert(`Gagal upload ke Cloud: ${error.message}. Menggunakan mode offline.`);
             useLocalFallback();
         } finally {
-            setIsUploading(false);
+            loadingUpdater(false);
         }
     } else {
         useLocalFallback();
     }
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if(file) {
+          processUpload(
+              file, 
+              (url) => setSettings(prev => ({ ...prev, logoUrl: url })),
+              setIsUploadingLogo,
+              setPreviewLogo,
+              'logo'
+          );
+      }
+  };
+
+  const handleKopUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if(file) {
+          processUpload(
+              file, 
+              (url) => setSettings(prev => ({ ...prev, kopSuratUrl: url })),
+              setIsUploadingKop,
+              setPreviewKop,
+              'kop'
+          );
+      }
   };
 
   return (
@@ -230,7 +260,7 @@ const SettingsManager: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pengaturan Instansi</h1>
-          <p className="text-slate-500">Konfigurasi identitas, logo, dan koneksi database.</p>
+          <p className="text-slate-500">Konfigurasi identitas, logo, kop surat, dan koneksi database.</p>
         </div>
       </div>
 
@@ -335,7 +365,7 @@ const SettingsManager: React.FC = () => {
             )}
             
             <div className="space-y-4">
-               <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Identitas Kop Surat</h3>
+               <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Identitas Instansi</h3>
                <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Nama Pemerintahan / Instansi Induk</label>
                   <div className="flex items-center bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all">
@@ -366,40 +396,55 @@ const SettingsManager: React.FC = () => {
                </div>
             </div>
 
-            <div className="space-y-4 pt-4">
-               <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest border-b pb-2 mb-4">Logo Instansi</h3>
+            {/* LOGO UPLOAD SECTION */}
+            <div className="space-y-4 pt-4 border-t">
+               <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest mb-4 flex items-center">
+                   <ImageIcon size={16} className="mr-2"/> Logo Aplikasi
+               </h3>
                <div className="flex items-start space-x-6">
-                  <div className="w-32 h-32 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative">
-                     {isUploading ? (
+                  <div className="w-24 h-24 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative flex-shrink-0">
+                     {isUploadingLogo ? (
                         <div className="flex flex-col items-center justify-center text-indigo-600">
-                            <Loader2 size={24} className="animate-spin mb-2" />
-                            <span className="text-[10px] font-bold">Uploading...</span>
+                            <Loader2 size={24} className="animate-spin mb-1" />
                         </div>
                      ) : (
-                        previewLogo ? (
-                            <img src={previewLogo} alt="Logo Preview" className="w-full h-full object-contain p-2" />
-                        ) : (
-                            <ImageIcon className="text-slate-300" size={32} />
-                        )
+                        previewLogo ? <img src={previewLogo} alt="Logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="text-slate-300" size={24} />
                      )}
                   </div>
                   <div className="flex-1">
-                     <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Logo Baru</label>
-                     <div className="relative">
-                        <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" id="logo-upload" disabled={isUploading} />
-                        <label htmlFor="logo-upload" className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                           <Upload size={16} className="mr-2" />
-                           {isUploading ? 'Sedang Upload...' : 'Pilih Gambar...'}
-                        </label>
-                        <p className="text-xs text-slate-400 mt-2">
-                            {isDbConnected ? (
-                                <span className="text-emerald-600 flex items-center"><Check size={12} className="mr-1"/> Storage Online Aktif (Images Bucket)</span>
-                            ) : (
-                                "Mode Offline: Gambar disimpan lokal (Base64)."
-                            )}
-                            <br/>Format: PNG, JPG. Max 2MB.
-                        </p>
-                     </div>
+                     <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Logo (Square/Persegi)</label>
+                     <p className="text-xs text-slate-500 mb-2">Digunakan untuk tampilan Login dan Sidebar Menu.</p>
+                     <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" id="logo-upload" disabled={isUploadingLogo} />
+                     <label htmlFor="logo-upload" className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploadingLogo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <Upload size={16} className="mr-2" /> {isUploadingLogo ? 'Uploading...' : 'Pilih Logo...'}
+                     </label>
+                  </div>
+               </div>
+            </div>
+
+            {/* KOP SURAT UPLOAD SECTION */}
+            <div className="space-y-4 pt-4 border-t">
+               <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-widest mb-4 flex items-center">
+                   <FileImage size={16} className="mr-2"/> Kop Surat (Full Image)
+               </h3>
+               <div className="flex flex-col space-y-4">
+                  <div className="w-full h-32 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden relative">
+                     {isUploadingKop ? (
+                        <div className="flex flex-col items-center justify-center text-indigo-600">
+                            <Loader2 size={24} className="animate-spin mb-2" />
+                            <span className="text-xs">Uploading Header...</span>
+                        </div>
+                     ) : (
+                        previewKop ? <img src={previewKop} alt="Kop Surat" className="w-full h-full object-contain p-2" /> : <span className="text-slate-400 text-xs">Preview Kop Surat</span>
+                     )}
+                  </div>
+                  <div>
+                     <label className="block text-sm font-semibold text-slate-700 mb-2">Upload Kop Surat Lengkap</label>
+                     <p className="text-xs text-slate-500 mb-2">Upload gambar Kop Surat lengkap (Logo + Nama Instansi + Alamat + Garis). Digunakan untuk <b>Cetak Surat Tugas & SPPD</b>.</p>
+                     <input type="file" accept="image/*" onChange={handleKopUpload} className="hidden" id="kop-upload" disabled={isUploadingKop} />
+                     <label htmlFor="kop-upload" className={`inline-flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer ${isUploadingKop ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <Upload size={16} className="mr-2" /> {isUploadingKop ? 'Uploading...' : 'Pilih Gambar Kop Surat...'}
+                     </label>
                   </div>
                </div>
             </div>
@@ -415,35 +460,31 @@ const SettingsManager: React.FC = () => {
         </div>
 
         <div>
-           <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Preview Kop Surat</h3>
-           <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200" style={{ fontFamily: 'Times New Roman, serif' }}>
-              <div className="flex items-center border-b-[3px] border-black pb-4 mb-4 relative">
-                 <div className="w-20 flex-shrink-0 flex items-center justify-center">
-                    <img 
-                       src={previewLogo} 
-                       alt="Logo" 
-                       className="h-20 w-auto object-contain"
-                       onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/100x100?text=Error'; }}
-                    />
-                 </div>
-                 <div className="text-center w-full pl-2">
-                    <h3 className="text-md font-medium tracking-wide uppercase leading-tight">{settings.name}</h3>
-                    <h1 className="text-xl font-bold tracking-wider uppercase leading-tight">{settings.department}</h1>
-                    <p className="text-[10px] leading-tight mt-1">{settings.address}</p>
-                    <p className="text-[10px] leading-tight">{settings.contactInfo}</p>
-                 </div>
-              </div>
-              <div className="space-y-4 opacity-50 blur-[1px]">
-                 <div className="h-4 bg-slate-200 w-1/3 mx-auto rounded"></div>
-                 <div className="h-2 bg-slate-200 w-full rounded"></div>
-                 <div className="h-2 bg-slate-200 w-full rounded"></div>
-                 <div className="h-2 bg-slate-200 w-3/4 rounded"></div>
-                 <br/>
-                 <div className="h-2 bg-slate-200 w-full rounded"></div>
-                 <div className="h-2 bg-slate-200 w-full rounded"></div>
-              </div>
+           <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Preview</h3>
+           <div className="space-y-6">
+                {/* Preview Kop Surat (Priority for printing) */}
+                <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-200">
+                    <p className="text-xs font-bold text-slate-400 mb-2">Tampilan Cetak (Kop Surat)</p>
+                    <div className="border bg-white p-2" style={{ minHeight: '80px' }}>
+                        {previewKop ? (
+                            <img src={previewKop} alt="Preview Kop" className="w-full h-auto object-contain" />
+                        ) : (
+                            <div className="h-20 flex items-center justify-center text-slate-300 text-xs italic">Belum ada gambar kop surat</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Preview Logo (UI) */}
+                <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-200">
+                    <p className="text-xs font-bold text-slate-400 mb-2">Tampilan UI (Logo)</p>
+                    <div className="flex items-center space-x-3 p-3 bg-slate-900 rounded-lg">
+                        <div className="w-10 h-10 bg-white rounded flex items-center justify-center overflow-hidden">
+                            {previewLogo ? <img src={previewLogo} className="w-full h-full object-contain" /> : <div className="w-full h-full bg-indigo-500"/>}
+                        </div>
+                        <span className="text-white font-bold">E-SPPD</span>
+                    </div>
+                </div>
            </div>
-           <p className="text-xs text-slate-400 mt-4 text-center">Tampilan ini akan digunakan pada semua dokumen cetak.</p>
         </div>
       </div>
 
@@ -455,73 +496,7 @@ const SettingsManager: React.FC = () => {
                       <button onClick={() => setShowSqlModal(false)}><Unplug size={20} className="text-slate-400 hover:text-slate-600"/></button>
                   </div>
                   <div className="p-6 bg-slate-900 text-slate-300 font-mono text-xs overflow-auto max-h-[60vh]">
-<pre>{`-- 1. RESET TABLES (Agar struktur tabel benar-benar baru)
-DROP TABLE IF EXISTS public.receipts CASCADE;
-DROP TABLE IF EXISTS public.travel_reports CASCADE;
-DROP TABLE IF EXISTS public.sppds CASCADE;
-DROP TABLE IF EXISTS public.assignment_letters CASCADE;
-
--- 2. TABEL TRANSAKSI (Dengan kolom employee_ids[])
-CREATE TABLE public.assignment_letters (
-    id TEXT PRIMARY KEY,
-    number TEXT NOT NULL,
-    date DATE NOT NULL,
-    basis TEXT,
-    employee_ids TEXT[], -- ARRAY Text untuk menampung banyak pegawai
-    subject TEXT,
-    destination_id TEXT REFERENCES public.cities(id),
-    destination_address TEXT,
-    start_date DATE,
-    end_date DATE,
-    duration INTEGER,
-    signatory_id TEXT REFERENCES public.signatories(id),
-    status TEXT DEFAULT 'Pending',
-    signature_type TEXT,
-    upper_title TEXT,
-    intermediate_title TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
-CREATE TABLE public.sppds (
-    id TEXT PRIMARY KEY,
-    assignment_id TEXT REFERENCES public.assignment_letters(id) ON DELETE CASCADE,
-    start_date DATE,
-    end_date DATE,
-    status TEXT,
-    transport_id TEXT REFERENCES public.transport_modes(id),
-    funding_id TEXT REFERENCES public.funding_sources(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
-CREATE TABLE public.receipts (
-    id TEXT PRIMARY KEY,
-    sppd_id TEXT REFERENCES public.sppds(id) ON DELETE CASCADE,
-    date DATE,
-    daily_allowance JSONB,
-    transport JSONB,
-    accommodation JSONB,
-    fuel JSONB,
-    toll JSONB,
-    representation JSONB,
-    other JSONB,
-    total_amount NUMERIC DEFAULT 0,
-    status TEXT DEFAULT 'Draft',
-    treasurer_id TEXT REFERENCES public.signatories(id),
-    pptk_id TEXT REFERENCES public.signatories(id),
-    kpa_id TEXT REFERENCES public.signatories(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
-CREATE TABLE public.travel_reports (
-    id TEXT PRIMARY KEY,
-    sppd_id TEXT REFERENCES public.sppds(id) ON DELETE CASCADE,
-    subject TEXT,
-    results TEXT,
-    status TEXT DEFAULT 'Completed',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
--- 3. TABEL MASTER (Dibuat jika belum ada)
+<pre>{`-- Update Struktur Table agency_settings
 CREATE TABLE IF NOT EXISTS public.agency_settings (
     id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     name TEXT NOT NULL,
@@ -529,67 +504,16 @@ CREATE TABLE IF NOT EXISTS public.agency_settings (
     address TEXT,
     contact_info TEXT,
     logo_url TEXT,
+    kop_surat_url TEXT, -- Kolom Baru untuk Kop Surat
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
-CREATE TABLE IF NOT EXISTS public.employees (
-    id TEXT PRIMARY KEY,
-    nip TEXT NOT NULL,
-    name TEXT NOT NULL,
-    position TEXT,
-    grade TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.cities (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    province TEXT,
-    daily_allowance NUMERIC DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.funding_sources (
-    id TEXT PRIMARY KEY,
-    code TEXT,
-    name TEXT,
-    budget_year TEXT,
-    amount NUMERIC DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.transport_modes (
-    id TEXT PRIMARY KEY,
-    type TEXT,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-CREATE TABLE IF NOT EXISTS public.signatories (
-    id TEXT PRIMARY KEY,
-    employee_id TEXT REFERENCES public.employees(id),
-    role TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
 
--- 4. RLS & POLICIES (Buka akses untuk semua user login/anon sementara)
-ALTER TABLE public.assignment_letters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sppds ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.receipts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.travel_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.funding_sources ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transport_modes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.signatories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.agency_settings ENABLE ROW LEVEL SECURITY;
-
-DO $$ 
-DECLARE 
-    t text; 
-BEGIN 
-    FOR t IN 
-        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' 
-    LOOP 
-        EXECUTE format('DROP POLICY IF EXISTS "Public Access" ON %I', t); 
-        EXECUTE format('CREATE POLICY "Public Access" ON %I FOR ALL USING (true)', t); 
-    END LOOP; 
+-- Pastikan kolom ada jika tabel sudah ada
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agency_settings' AND column_name='kop_surat_url') THEN
+        ALTER TABLE public.agency_settings ADD COLUMN kop_surat_url TEXT;
+    END IF;
 END $$;
 `}</pre>
                   </div>

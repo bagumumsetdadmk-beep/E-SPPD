@@ -21,7 +21,8 @@ export interface AgencySettings {
   department: string;  // e.g., SEKRETARIAT DAERAH
   address: string;     // e.g., Jalan Kyai Singkil 7...
   contactInfo: string; // e.g., Telp: (0291) ...
-  logoUrl: string;     // Base64 string for image
+  logoUrl: string;     // Used for App UI (Sidebar, Login)
+  kopSuratUrl?: string; // New: Used for Printed Documents (Full Image)
 }
 
 export interface Employee {
