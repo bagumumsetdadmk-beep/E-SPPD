@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserCog, LogIn, User as UserIcon } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { UserRole, AgencySettings } from '../types';
 
 interface LoginProps {
@@ -12,21 +12,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [settings, setSettings] = useState<AgencySettings | null>(null);
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     const savedSettings = localStorage.getItem('agency_settings');

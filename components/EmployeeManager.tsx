@@ -1,13 +1,99 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Edit2, Trash2, Filter, MoreVertical, Download, X, RefreshCw, CheckCircle2, Upload, FileSpreadsheet } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { Employee } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
 const INITIAL_EMPLOYEES: Employee[] = [
-  { id: '1', nip: '198801012015031001', name: 'Andi Pratama, S.T.', position: 'Kepala Bagian IT', grade: 'Penata (III/c)' },
-  { id: '2', nip: '199205122018012002', name: 'Siti Wahyuni, M.Ak.', position: 'Staf Keuangan', grade: 'Penata Muda Tk.I (III/b)' },
+  { id: '1', nip: '198801012015031001', name: 'Andi Pratama, S.T.', position: 'Kepala Bagian IT', rank: 'Penata', grade: 'III/c' },
+  { id: '2', nip: '199205122018012002', name: 'Siti Wahyuni, M.Ak.', position: 'Staf Keuangan', rank: 'Penata Muda Tk.I', grade: 'III/b' },
+];
+
+// --- KONSTANTA PANGKAT & GOLONGAN ---
+
+const RANK_OPTIONS = [
+  {
+    group: "PNS - Golongan IV (Pembina)",
+    options: [
+      "Pembina Utama",
+      "Pembina Utama Madya",
+      "Pembina Utama Muda",
+      "Pembina Tk. I",
+      "Pembina"
+    ]
+  },
+  {
+    group: "PNS - Golongan III (Penata)",
+    options: [
+      "Penata Tk. I",
+      "Penata",
+      "Penata Muda Tk. I",
+      "Penata Muda"
+    ]
+  },
+  {
+    group: "PNS - Golongan II (Pengatur)",
+    options: [
+      "Pengatur Tk. I",
+      "Pengatur",
+      "Pengatur Muda Tk. I",
+      "Pengatur Muda"
+    ]
+  },
+  {
+    group: "PNS - Golongan I (Juru)",
+    options: [
+      "Juru Tk. I",
+      "Juru",
+      "Juru Muda Tk. I",
+      "Juru Muda"
+    ]
+  },
+  {
+    group: "PPPK (Fungsional)",
+    options: [
+      "Ahli Utama",
+      "Ahli Madya",
+      "Ahli Muda",
+      "Ahli Pertama",
+      "Penyelia",
+      "Mahir",
+      "Terampil",
+      "Pemula"
+    ]
+  },
+  {
+    group: "Lainnya",
+    options: [
+      "Tenaga Kontrak",
+      "Honorer",
+      "Magang"
+    ]
+  }
+];
+
+const GRADE_OPTIONS = [
+  {
+    group: "PNS",
+    options: [
+      "IV/e", "IV/d", "IV/c", "IV/b", "IV/a",
+      "III/d", "III/c", "III/b", "III/a",
+      "II/d", "II/c", "II/b", "II/a",
+      "I/d", "I/c", "I/b", "I/a"
+    ]
+  },
+  {
+    group: "PPPK",
+    options: [
+      "XVII", "XVI", "XV", "XIV", "XIII", "XII", "XI",
+      "X", "IX", "VIII", "VII", "VI", "V", "IV", "III", "II", "I"
+    ]
+  },
+  {
+    group: "Lainnya",
+    options: ["-"]
+  }
 ];
 
 const EmployeeManager: React.FC = () => {
@@ -30,24 +116,9 @@ const EmployeeManager: React.FC = () => {
     nip: '',
     name: '',
     position: '',
+    rank: '',
     grade: ''
   });
-
-  // Helper: Get Supabase Client
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     fetchEmployees();
@@ -63,7 +134,16 @@ const EmployeeManager: React.FC = () => {
         const { data, error } = await client.from('employees').select('*').order('name');
         if (error) throw error;
         if (data && data.length > 0) {
-           setEmployees(data);
+           // Ensure mapping if DB columns are snake_case vs camelCase types
+           const mapped: Employee[] = data.map((d: any) => ({
+             id: d.id,
+             nip: d.nip,
+             name: d.name,
+             position: d.position,
+             rank: d.rank, // New column
+             grade: d.grade
+           }));
+           setEmployees(mapped);
            setIsLoading(false);
            return;
         }
@@ -85,10 +165,16 @@ const EmployeeManager: React.FC = () => {
   const handleOpenModal = (emp?: Employee) => {
     if (emp) {
       setEditingEmployee(emp);
-      setFormData({ nip: emp.nip, name: emp.name, position: emp.position, grade: emp.grade });
+      setFormData({ 
+        nip: emp.nip, 
+        name: emp.name, 
+        position: emp.position, 
+        rank: emp.rank || '', 
+        grade: emp.grade 
+      });
     } else {
       setEditingEmployee(null);
-      setFormData({ nip: '', name: '', position: '', grade: '' });
+      setFormData({ nip: '', name: '', position: '', rank: '', grade: '' });
     }
     setIsModalOpen(true);
   };
@@ -160,7 +246,8 @@ const EmployeeManager: React.FC = () => {
               <th style="background-color: #e2e8f0; font-weight: bold;">NIP</th>
               <th style="background-color: #e2e8f0; font-weight: bold;">Nama Lengkap</th>
               <th style="background-color: #e2e8f0; font-weight: bold;">Jabatan</th>
-              <th style="background-color: #e2e8f0; font-weight: bold;">Pangkat/Golongan</th>
+              <th style="background-color: #e2e8f0; font-weight: bold;">Pangkat</th>
+              <th style="background-color: #e2e8f0; font-weight: bold;">Golongan</th>
             </tr>
           </thead>
           <tbody>
@@ -168,7 +255,8 @@ const EmployeeManager: React.FC = () => {
               <td style="mso-number-format:'@'">199001012020011001</td>
               <td>Budi Santoso</td>
               <td>Staf Teknis</td>
-              <td>Penata Muda (III/a)</td>
+              <td>Penata Muda</td>
+              <td>III/a</td>
             </tr>
           </tbody>
         </table>
@@ -203,7 +291,7 @@ const EmployeeManager: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "Template_Pegawai.xls"; // .xls allows HTML content
+      link.download = "Template_Pegawai_New.xls"; // .xls allows HTML content
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -214,8 +302,6 @@ const EmployeeManager: React.FC = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      // NOTE: Import masih menggunakan logic CSV karena parsing Excel di client butuh library berat (xlsx).
-      // User disarankan Save As CSV jika edit di Excel.
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -247,7 +333,8 @@ const EmployeeManager: React.FC = () => {
                           nip: nip.replace(/'/g, ''),
                           name,
                           position: cols[2] || '',
-                          grade: cols[3] || ''
+                          rank: cols[3] || '',
+                          grade: cols[4] || '' // Assuming grade is 5th column now if rank inserted
                       });
                   }
               }
@@ -336,7 +423,7 @@ const EmployeeManager: React.FC = () => {
                 <th className="px-6 py-4">NIP</th>
                 <th className="px-6 py-4">Nama Lengkap</th>
                 <th className="px-6 py-4">Jabatan</th>
-                <th className="px-6 py-4">Pangkat/Golongan</th>
+                <th className="px-6 py-4">Pangkat / Golongan</th>
                 <th className="px-6 py-4 text-right">Aksi</th>
               </tr>
             </thead>
@@ -349,9 +436,12 @@ const EmployeeManager: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-slate-600">{emp.position}</td>
                   <td className="px-6 py-4">
-                    <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold">
-                      {emp.grade}
-                    </span>
+                    <div className="flex flex-col space-y-1">
+                      {emp.rank && <span className="text-xs font-bold text-slate-700">{emp.rank}</span>}
+                      <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold w-fit">
+                        {emp.grade}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
@@ -426,15 +516,42 @@ const EmployeeManager: React.FC = () => {
                   className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-black text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
                 />
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Pangkat / Golongan</label>
-                <input 
-                  type="text" required
-                  value={formData.grade}
-                  onChange={(e) => setFormData({...formData, grade: e.target.value})}
-                  placeholder="Contoh: Pembina (IV/a)"
-                  className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-black text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
-                />
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Pangkat</label>
+                    <select
+                      value={formData.rank}
+                      onChange={(e) => setFormData({...formData, rank: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-black text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    >
+                        <option value="">-- Pilih Pangkat --</option>
+                        {RANK_OPTIONS.map((group, idx) => (
+                            <optgroup key={idx} label={group.group}>
+                                {group.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Golongan</label>
+                    <select
+                      required
+                      value={formData.grade}
+                      onChange={(e) => setFormData({...formData, grade: e.target.value})}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-black text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    >
+                        <option value="">-- Pilih Golongan --</option>
+                        {GRADE_OPTIONS.map((group, idx) => (
+                            <optgroup key={idx} label={group.group}>
+                                {group.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                  </div>
               </div>
               <div className="pt-4 flex space-x-3">
                 <button 

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Wallet, Landmark, PieChart, Plus, X, Trash2, Edit2, TrendingUp, RefreshCw } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { FundingSource } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -25,21 +25,6 @@ const FundingManager: React.FC = () => {
   // Delete Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     fetchFunding();

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Upload, Building2, MapPin, Phone, Image as ImageIcon, Database, Check, ShieldCheck, Unplug, Globe, FileCode, Loader2, AlertCircle, RefreshCw, FileImage } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { AgencySettings } from '../types';
 
 const INITIAL_SETTINGS: AgencySettings = {
@@ -14,6 +15,7 @@ const INITIAL_SETTINGS: AgencySettings = {
 };
 
 const SettingsManager: React.FC = () => {
+  // Logic to determine initial connection state
   const getInitialDbConfig = () => {
     const env = (import.meta as any).env;
     const envUrl = env?.VITE_SUPABASE_URL;
@@ -61,6 +63,7 @@ const SettingsManager: React.FC = () => {
   const [showStorageModal, setShowStorageModal] = useState(false);
 
   useEffect(() => {
+    // If connected via ENV or LocalStorage at start, try to fetch
     if (dbConfig.url && dbConfig.key) {
       fetchSettingsFromDb(dbConfig);
     }
@@ -108,11 +111,11 @@ const SettingsManager: React.FC = () => {
 
     localStorage.setItem('agency_settings', JSON.stringify(settings));
 
-    if (isDbConnected && dbConfig.url && dbConfig.key) {
+    const client = getSupabase(); // Use centralized client if available
+    
+    if (client) {
         try {
-            const supabase = createClient(dbConfig.url, dbConfig.key);
-
-            const { data: existing } = await supabase
+            const { data: existing } = await client
                 .from('agency_settings')
                 .select('id')
                 .limit(1)
@@ -124,15 +127,15 @@ const SettingsManager: React.FC = () => {
                 address: settings.address,
                 contact_info: settings.contactInfo,
                 logo_url: settings.logoUrl,
-                kop_surat_url: settings.kopSuratUrl, // Save new field
+                kop_surat_url: settings.kopSuratUrl, 
                 updated_at: new Date()
             };
 
             if (existing) {
-                const { error } = await supabase.from('agency_settings').update(payload).eq('id', existing.id);
+                const { error } = await client.from('agency_settings').update(payload).eq('id', existing.id);
                 if (error) throw error;
             } else {
-                const { error } = await supabase.from('agency_settings').insert([payload]);
+                const { error } = await client.from('agency_settings').insert([payload]);
                 if (error) throw error;
             }
 
@@ -157,6 +160,9 @@ const SettingsManager: React.FC = () => {
             setIsDbConnected(true);
             setConfigSource('local');
             fetchSettingsFromDb(dbConfig);
+            // Reload page might be needed to refresh other components if they don't listen to storage changes
+            // But we'll rely on the user navigating or refreshing for now to keep it simple SPA
+            alert("Koneksi disimpan. Silakan refresh halaman jika data di menu lain belum muncul.");
         } catch (error) {
             alert("Format URL Supabase tidak valid.");
         }
@@ -197,21 +203,22 @@ const SettingsManager: React.FC = () => {
         return;
     }
 
-    if (isDbConnected && dbConfig.url && dbConfig.key) {
+    const client = getSupabase();
+
+    if (client) {
         loadingUpdater(true);
         try {
-            const supabase = createClient(dbConfig.url, dbConfig.key);
             const fileExt = file.name.split('.').pop();
             const fileName = `${filePrefix}-${Date.now()}.${fileExt}`;
             const filePath = `${fileName}`;
 
-            const { error: uploadError } = await supabase.storage
+            const { error: uploadError } = await client.storage
                 .from('images')
                 .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
             if (uploadError) throw uploadError;
 
-            const { data } = supabase.storage.from('images').getPublicUrl(filePath);
+            const { data } = client.storage.from('images').getPublicUrl(filePath);
 
             if (data.publicUrl) {
                 stateUpdater(data.publicUrl);

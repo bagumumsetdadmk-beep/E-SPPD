@@ -21,7 +21,7 @@ import {
   Cell,
   Legend
 } from 'recharts';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 
 const StatCard = ({ title, value, subValue, icon: Icon, color, isLoading }: any) => (
   <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden">
@@ -60,22 +60,6 @@ const Dashboard: React.FC = () => {
 
   const [pieData, setPieData] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
-
-  // Helper untuk mendapatkan client Supabase
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     fetchDashboardData();

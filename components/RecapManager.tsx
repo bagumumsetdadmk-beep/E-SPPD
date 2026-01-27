@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Download, Printer, Calendar, RefreshCw } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { Receipt, SPPD, AssignmentLetter, FundingSource, Employee, City, User } from '../types';
 
 const RecapManager: React.FC = () => {
@@ -17,21 +17,6 @@ const RecapManager: React.FC = () => {
   const [filterFunding, setFilterFunding] = useState<string>('');
 
   const isAdmin = user?.role === 'Admin';
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   const fetchData = async () => {
     setIsLoading(true);

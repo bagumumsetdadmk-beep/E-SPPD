@@ -1,506 +1,908 @@
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  ClipboardList, 
-  Calendar, 
-  CheckCircle, 
-  Plus, 
-  X, 
-  Trash2, 
-  Edit2, 
-  ArrowRight, 
-  FileText, 
-  User, 
-  MapPin, 
-  Printer, 
-  Banknote,
-  RefreshCw
-} from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
-import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory, AgencySettings, User as UserType } from '../types';
+import { Printer, RefreshCw, FileText, Trash2, Edit2, X, CheckCircle2, Clock, Save, FilePlus, ArrowRight, Search, Eye } from 'lucide-react';
+import { getSupabase } from '../supabaseClient';
+import { AssignmentLetter, Employee, City, SPPD, TransportMode, FundingSource, Signatory, AgencySettings } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
-const INITIAL_SETTINGS: AgencySettings = {
-  name: 'PEMERINTAH KABUPATEN DEMAK',
-  department: 'SEKRETARIAT DAERAH',
-  address: 'Jalan Kyai Singkil 7, Demak, Jawa Tengah 59511',
-  contactInfo: 'Telepon (0291) 685877, Faksimile (0291) 685625, Laman setda.demakkab.go.id, Pos-el setda@demakkab.go.id',
-  logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Lambang_Kabupaten_Demak.png/486px-Lambang_Kabupaten_Demak.png'
-};
-
 const SPPDManager: React.FC = () => {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<UserType | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [cities, setCities] = useState<City[]>([]);
   const [transportModes, setTransportModes] = useState<TransportMode[]>([]);
   const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   const [signatories, setSignatories] = useState<Signatory[]>([]);
   const [assignments, setAssignments] = useState<AssignmentLetter[]>([]);
-  const [agencySettings, setAgencySettings] = useState<AgencySettings>(INITIAL_SETTINGS);
+  const [agencySettings, setAgencySettings] = useState<AgencySettings>({ name: '', department: '', address: '', contactInfo: '', logoUrl: '', kopSuratUrl: '' });
   const [sppds, setSppds] = useState<SPPD[]>([]);
+  
   const [isLoading, setIsLoading] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Modals & State
+  const [activeTab, setActiveTab] = useState<'Ready' | 'Issued'>('Ready');
+  
+  // Edit/Create Modal
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState<AssignmentLetter | null>(null); // For creating new
+  const [editingSppd, setEditingSppd] = useState<SPPD | null>(null); // For editing existing
+  
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-  const [editingSppd, setEditingSppd] = useState<Partial<SPPD> | null>(null);
-  const [printingSppd, setPrintingSppd] = useState<SPPD | null>(null);
-  
-  const [formData, setFormData] = useState({ 
-    id: '', assignmentId: '', ref: '', startDate: '', endDate: '', 
-    displayEmployeeNames: '', destinationName: '', transportId: '', fundingId: '' 
+
+  // Form Data
+  const [formData, setFormData] = useState({
+      transportId: '',
+      fundingId: '',
+      status: 'Selesai' as 'Sedang Berjalan' | 'Selesai' // Default to Selesai/Published
   });
-
-  const isAdmin = user?.role === 'Admin';
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) setUser(JSON.parse(savedUser));
-    loadLocalData();
-    fetchData();
-  }, []);
-
-  const loadLocalData = () => {
-    setEmployees(JSON.parse(localStorage.getItem('employees') || '[]'));
-    setCities(JSON.parse(localStorage.getItem('cities') || '[]'));
-    setAssignments(JSON.parse(localStorage.getItem('assignment_tasks_v2') || '[]'));
-    setTransportModes(JSON.parse(localStorage.getItem('transport_modes') || '[]'));
-    setFundingSources(JSON.parse(localStorage.getItem('funding_sources') || '[]'));
-    setSignatories(JSON.parse(localStorage.getItem('signatories') || '[]'));
-    setSppds(JSON.parse(localStorage.getItem('sppd_data') || '[]'));
-    const settingsData = localStorage.getItem('agency_settings');
-    if (settingsData) setAgencySettings(JSON.parse(settingsData));
-  };
 
   const fetchData = async () => {
     setIsLoading(true);
     const client = getSupabase();
-    if (client) {
-      try {
-        const { data: sppdData } = await client.from('sppds').select('*').order('created_at', { ascending: false });
-        if (sppdData) {
-           setSppds(sppdData.map((item: any) => ({
-             id: item.id, assignmentId: item.assignment_id, startDate: item.start_date, endDate: item.end_date, 
-             status: item.status, transportId: item.transport_id, fundingId: item.funding_id
-           })));
-        }
-      } catch (e) {}
+    
+    const fetchLocal = () => {
+        setEmployees(JSON.parse(localStorage.getItem('employees') || '[]'));
+        setCities(JSON.parse(localStorage.getItem('cities') || '[]'));
+        setTransportModes(JSON.parse(localStorage.getItem('transport_modes') || '[]'));
+        setFundingSources(JSON.parse(localStorage.getItem('funding_sources') || '[]'));
+        setSignatories(JSON.parse(localStorage.getItem('signatories') || '[]'));
+        setAssignments(JSON.parse(localStorage.getItem('assignment_tasks_v2') || '[]'));
+        setSppds(JSON.parse(localStorage.getItem('sppd_data') || '[]'));
+        const settings = localStorage.getItem('agency_settings');
+        if(settings) setAgencySettings(JSON.parse(settings));
+    };
+
+    if (!client) {
+        fetchLocal();
+        setIsLoading(false);
+        return;
     }
-    setIsLoading(false);
+
+    try {
+        const { data: emps } = await client.from('employees').select('*');
+        if (emps) {
+            setEmployees(emps.map((d: any) => ({
+                id: d.id, nip: d.nip, name: d.name, position: d.position, rank: d.rank, grade: d.grade
+            })));
+        }
+        
+        const { data: cts } = await client.from('cities').select('*');
+        if (cts) setCities(cts.map(c => ({ id: c.id, name: c.name, province: c.province, dailyAllowance: c.daily_allowance })));
+        
+        const { data: asgs } = await client.from('assignment_letters').select('*');
+        if (asgs) setAssignments(asgs.map(a => ({ id: a.id, number: a.number, date: a.date, basis: a.basis, employeeIds: a.employee_ids, subject: a.subject, destinationId: a.destination_id, destinationAddress: a.destination_address, startDate: a.start_date, endDate: a.end_date, duration: a.duration, signatoryId: a.signatory_id, status: a.status, signatureType: a.signature_type, upperTitle: a.upper_title, intermediateTitle: a.intermediate_title })));
+        
+        const { data: sps } = await client.from('sppds').select('*').order('created_at', { ascending: false });
+        if (sps) setSppds(sps.map(s => ({ id: s.id, assignmentId: s.assignment_id, startDate: s.start_date, endDate: s.end_date, status: s.status, transportId: s.transport_id, fundingId: s.funding_id })));
+        
+        const { data: tms } = await client.from('transport_modes').select('*');
+        if (tms) setTransportModes(tms);
+        
+        const { data: fns } = await client.from('funding_sources').select('*');
+        if (fns) setFundingSources(fns.map(f => ({ id: f.id, code: f.code, name: f.name, amount: f.amount, budgetYear: f.budget_year })));
+        
+        const { data: sigs } = await client.from('signatories').select('*');
+        if (sigs) setSignatories(sigs.map(s => ({ id: s.id, employeeId: s.employee_id, role: s.role, isActive: s.is_active })));
+
+        const { data: stgs } = await client.from('agency_settings').select('*').limit(1).maybeSingle();
+        if (stgs) setAgencySettings({ name: stgs.name, department: stgs.department, address: stgs.address, contactInfo: stgs.contact_info, logoUrl: stgs.logo_url, kopSuratUrl: stgs.kop_surat_url });
+
+    } catch (e) {
+        console.error(e);
+        fetchLocal();
+    } finally { 
+        setIsLoading(false); 
+    }
   };
 
-  const syncToLocalStorage = (data: SPPD[]) => {
-    localStorage.setItem('sppd_data', JSON.stringify(data));
+  useEffect(() => { fetchData(); }, []);
+
+  // --- HELPER --
+  const getHelperDetails = (assignmentId: string) => {
+      const task = assignments.find(a => a.id === assignmentId);
+      if (!task) return { empName: 'Unknown', dest: '-', refNumber: '-', subject: '-' };
+      
+      const mainEmp = employees.find(e => e.id === task.employeeIds[0]);
+      const dest = cities.find(c => c.id === task.destinationId)?.name || '-';
+      return { 
+          empName: mainEmp?.name || 'Unknown', 
+          dest, 
+          refNumber: task.number,
+          subject: task.subject
+      };
   };
 
-  const readyToProcess = assignments.filter(task => 
-    task.status === 'Approved' && !sppds.some(sppd => sppd.assignmentId === task.id)
-  );
+  // --- DERIVED LISTS WITH SEARCH FILTER ---
+  const filterList = (list: any[], type: 'Ready' | 'Issued') => {
+      if (!searchTerm) return list;
+      const lowerTerm = searchTerm.toLowerCase();
 
-  const handleCreateFromAssignment = (task: AssignmentLetter) => {
-    if (!isAdmin) return;
-    const taskEmployees = employees.filter(e => task.employeeIds.includes(e.id)).map(e => e.name).join(', ');
-    const dest = cities.find(c => c.id === task.destinationId)?.name || '-';
-    setFormData({
-      id: `090/${Math.floor(100 + Math.random() * 900)}/2024`,
-      assignmentId: task.id, ref: task.number, startDate: task.startDate, endDate: task.endDate,
-      displayEmployeeNames: taskEmployees, destinationName: dest, transportId: '', fundingId: ''
-    });
-    setIsModalOpen(true);
+      return list.filter(item => {
+          if (type === 'Ready') {
+              const task = item as AssignmentLetter;
+              const emp = employees.find(e => e.id === task.employeeIds[0]);
+              const dest = cities.find(c => c.id === task.destinationId);
+              return (
+                  task.number.toLowerCase().includes(lowerTerm) ||
+                  (emp?.name || '').toLowerCase().includes(lowerTerm) ||
+                  (dest?.name || '').toLowerCase().includes(lowerTerm)
+              );
+          } else {
+              const sppd = item as SPPD;
+              const details = getHelperDetails(sppd.assignmentId);
+              return (
+                  sppd.id.toLowerCase().includes(lowerTerm) ||
+                  details.empName.toLowerCase().includes(lowerTerm) ||
+                  details.refNumber.toLowerCase().includes(lowerTerm) ||
+                  details.dest.toLowerCase().includes(lowerTerm)
+              );
+          }
+      });
+  };
+
+  const rawReadyList = assignments.filter(a => a.status === 'Approved' && !sppds.some(s => s.assignmentId === a.id));
+  const rawIssuedList = sppds;
+
+  const readyList = filterList(rawReadyList, 'Ready');
+  const issuedList = filterList(rawIssuedList, 'Issued');
+
+  // --- CRUD ACTIONS ---
+
+  const openCreateModal = (assignment: AssignmentLetter) => {
+      setSelectedAssignment(assignment);
+      setEditingSppd(null);
+      setFormData({
+          transportId: '',
+          fundingId: '',
+          status: 'Selesai'
+      });
+      setIsFormModalOpen(true);
+  };
+
+  const openEditModal = (sppd: SPPD) => {
+      setEditingSppd(sppd);
+      setSelectedAssignment(null);
+      setFormData({
+          transportId: sppd.transportId || '',
+          fundingId: sppd.fundingId || '',
+          status: sppd.status
+      });
+      setIsFormModalOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const client = getSupabase();
-    const newSppdData: SPPD = { ...formData, status: 'Sedang Berjalan' as any };
-    const dbPayload = { id: formData.id, assignment_id: formData.assignmentId, start_date: formData.startDate, end_date: formData.endDate, status: 'Sedang Berjalan', transport_id: formData.transportId, funding_id: formData.fundingId };
-    
-    const newList = [...sppds, newSppdData];
-    setSppds(newList);
-    syncToLocalStorage(newList);
-    setIsModalOpen(false);
-    if(client) { try { await client.from('sppds').upsert(dbPayload); } catch(e) {} }
-  };
-
-  const confirmDelete = async () => {
-    if (itemToDelete) {
-      const newList = sppds.filter(s => s.id !== itemToDelete);
-      setSppds(newList);
-      syncToLocalStorage(newList);
+      e.preventDefault();
       const client = getSupabase();
-      if(client) { try { await client.from('sppds').delete().eq('id', itemToDelete); } catch(e) {} }
-      setItemToDelete(null);
-    }
+
+      if (editingSppd) {
+          // UPDATE EXISTING SPPD
+          const updatedSppd: SPPD = { 
+              ...editingSppd, 
+              transportId: formData.transportId,
+              fundingId: formData.fundingId,
+              status: formData.status
+          };
+
+          const newSppdList = sppds.map(s => s.id === editingSppd.id ? updatedSppd : s);
+          setSppds(newSppdList);
+          localStorage.setItem('sppd_data', JSON.stringify(newSppdList));
+
+          if (client) {
+              try {
+                  await client.from('sppds').update({
+                      transport_id: formData.transportId,
+                      funding_id: formData.fundingId,
+                      status: formData.status
+                  }).eq('id', editingSppd.id);
+              } catch(err) { console.error(err); }
+          }
+      } else if (selectedAssignment) {
+          // CREATE NEW SPPD FROM ASSIGNMENT
+          const newId = `SPPD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+          const newSppd: SPPD = {
+              id: newId,
+              assignmentId: selectedAssignment.id,
+              startDate: selectedAssignment.startDate,
+              endDate: selectedAssignment.endDate,
+              transportId: formData.transportId,
+              fundingId: formData.fundingId,
+              status: formData.status
+          };
+
+          const newSppdList = [newSppd, ...sppds];
+          setSppds(newSppdList);
+          localStorage.setItem('sppd_data', JSON.stringify(newSppdList));
+
+          if (client) {
+              try {
+                  await client.from('sppds').insert({
+                      id: newId,
+                      assignment_id: selectedAssignment.id,
+                      start_date: selectedAssignment.startDate,
+                      end_date: selectedAssignment.endDate,
+                      transport_id: formData.transportId,
+                      funding_id: formData.fundingId,
+                      status: formData.status
+                  });
+              } catch(err) { console.error(err); }
+          }
+      }
+
+      setIsFormModalOpen(false);
   };
 
-  const getTaskDetails = (assignmentId: string) => {
-    const task = assignments.find(a => a.id === assignmentId);
-    if (!task) return { names: 'Unknown', dest: 'Unknown', ref: 'Unknown' };
-    const names = employees.filter(e => task.employeeIds.includes(e.id)).map(e => e.name).join(', ');
-    const dest = cities.find(c => c.id === task.destinationId)?.name || '-';
-    return { names, dest, ref: task.number, taskObj: task };
+  const handleDelete = async () => {
+      if (!itemToDelete) return;
+      
+      const newSppdList = sppds.filter(s => s.id !== itemToDelete);
+      setSppds(newSppdList);
+      localStorage.setItem('sppd_data', JSON.stringify(newSppdList));
+      setIsDeleteModalOpen(false);
+
+      const client = getSupabase();
+      if (client) {
+          try { await client.from('sppds').delete().eq('id', itemToDelete); } catch(e) { console.error(e); }
+      }
+      setItemToDelete(null);
   };
+
+  // --- PRINT LOGIC (NEW TAB) ---
+  const handlePrint = (sppd: SPPD) => {
+      const task = assignments.find(a => a.id === sppd.assignmentId);
+      if (!task) return alert("Data Surat Tugas tidak ditemukan.");
+
+      const emp = employees.find(e => e.id === task.employeeIds[0]);
+      // Followers (Pengikut) are employees starting from index 1
+      const followers = task.employeeIds.slice(1).map(id => employees.find(e => e.id === id)).filter(Boolean);
+      
+      const signatory = signatories.find(s => s.id === task.signatoryId);
+      const signatoryEmp = employees.find(e => e.id === signatory?.employeeId);
+      const fund = fundingSources.find(f => f.id === sppd.fundingId);
+      const transport = transportModes.find(t => t.id === sppd.transportId);
+      const destCity = cities.find(c => c.id === task.destinationId);
+
+      const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : '-';
+
+      // HTML String Construction
+      const printContent = `
+        <!DOCTYPE html>
+        <html lang="id">
+        <head>
+            <meta charset="UTF-8">
+            <title>Cetak SPPD - ${sppd.id}</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style>
+                @media print {
+                    @page { size: A4; margin: 1cm 1.5cm; }
+                    body { margin: 0; background: white; -webkit-print-color-adjust: exact; }
+                    .no-print { display: none !important; }
+                    .page-break { page-break-before: always; }
+                    .avoid-break { page-break-inside: avoid; }
+                    /* Reduced padding top for print container */
+                    .print-container { padding: 5mm 20mm; width: 100%; box-sizing: border-box; }
+                }
+                body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.3; color: black; background: #f1f5f9; }
+                .print-container { 
+                    margin: 0 auto; 
+                    background: white; 
+                    padding: 10mm 20mm; 
+                    width: 210mm; 
+                    min-height: 297mm; 
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 20px;
+                }
+                table { width: 100%; border-collapse: collapse; }
+                .bordered-table td, .bordered-table th { border: 1px solid black; padding: 4px 6px; vertical-align: top; }
+                .noborder-table td { border: none; padding: 2px; vertical-align: top; }
+                .visum-table td { border: 1px solid black; padding: 5px; vertical-align: top; }
+            </style>
+        </head>
+        <body>
+            <!-- Toolbar -->
+            <div class="no-print fixed top-0 left-0 right-0 bg-slate-800 text-white p-4 flex justify-between items-center shadow-lg z-50">
+                <div class="font-bold">Pratinjau Cetak SPPD: ${sppd.id}</div>
+                <div class="flex space-x-3">
+                    <button onclick="window.close()" class="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded font-bold">Tutup</button>
+                    <button onclick="window.print()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded font-bold flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2-2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                        Cetak Sekarang
+                    </button>
+                </div>
+            </div>
+            <div class="h-16 no-print"></div>
+
+            <!-- HALAMAN 1 -->
+            <div class="print-container">
+                <!-- KOP -->
+                <div class="w-full mb-2 flex justify-center">
+                    ${agencySettings.kopSuratUrl ? 
+                        `<img src="${agencySettings.kopSuratUrl}" alt="KOP" class="w-full max-h-[120px] object-contain" />` : 
+                        `<div class="w-full text-center border-b-2 border-black pb-4 mb-4">
+                            <h2 class="text-lg font-bold uppercase">${agencySettings.name}</h2>
+                            <h1 class="text-xl font-bold uppercase">${agencySettings.department}</h1>
+                            <p class="text-sm">${agencySettings.address}</p>
+                        </div>`
+                    }
+                </div>
+
+                <div class="flex justify-end mb-1 text-[10pt]">
+                    <table style="width: auto;"><tbody>
+                        <tr><td class="pr-2">Lembar Ke</td><td>:</td><td>1</td></tr>
+                        <tr><td class="pr-2">Kode No</td><td>:</td><td></td></tr>
+                        <tr><td class="pr-2">Nomor</td><td>:</td><td class="font-bold">${sppd.id}</td></tr>
+                    </tbody></table>
+                </div>
+
+                <div class="text-center mb-6 mt-4">
+                    <h2 class="text-[14pt] font-bold underline uppercase m-0 text-black decoration-2 underline-offset-4">SURAT PERINTAH PERJALANAN DINAS</h2>
+                    <p class="font-bold uppercase m-0 text-black text-[12pt]">(SPPD)</p>
+                </div>
+
+                <table class="bordered-table mb-8">
+                    <colgroup>
+                        <col style="width: 40px;" />
+                        <col style="width: 38%;" />
+                        <col />
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td class="text-center">1</td>
+                            <td>Pejabat berwenang yang memberi perintah</td>
+                            <td class="font-bold">${signatory?.role || '-'}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">2</td>
+                            <td>Nama / NIP Pegawai yang diperintahkan</td>
+                            <td>
+                                <span class="font-bold">${emp?.name || '-'}</span><br/>
+                                NIP. ${emp?.nip || '-'}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">3</td>
+                            <td>
+                                a. Pangkat dan Golongan<br/>
+                                b. Jabatan / Instansi<br/>
+                                c. Tingkat Biaya Perjalanan Dinas
+                            </td>
+                            <td>
+                                a. ${emp?.rank || '-'} / ${emp?.grade || '-'}<br/>
+                                b. ${emp?.position || '-'}<br/>
+                                c. -
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">4</td>
+                            <td>Maksud Perjalanan Dinas</td>
+                            <td class="text-justify">${task.subject}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">5</td>
+                            <td>Alat angkutan yang dipergunakan</td>
+                            <td>${transport?.type || 'Kendaraan Dinas'}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">6</td>
+                            <td>
+                                a. Tempat berangkat<br/>
+                                b. Tempat Tujuan
+                            </td>
+                            <td>
+                                a. Demak<br/>
+                                b. ${destCity?.name || '-'}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">7</td>
+                            <td>
+                                a. Lamanya Perjalanan Dinas<br/>
+                                b. Tanggal berangkat<br/>
+                                c. Tanggal harus kembali
+                            </td>
+                            <td>
+                                a. ${task.duration} Hari<br/>
+                                b. ${fmtDate(task.startDate)}<br/>
+                                c. ${fmtDate(task.endDate)}
+                            </td>
+                        </tr>
+                        
+                        <!-- ITEM 8: Nested Table -->
+                        <tr>
+                            <td class="text-center align-top">8</td>
+                            <td colspan="2" style="padding: 0; border: none;">
+                                <table style="width: 100%; border-collapse: collapse; border: none;">
+                                    <colgroup>
+                                        <col style="width: 45%" />
+                                        <col style="width: 25%" />
+                                        <col style="width: 30%" />
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <td style="border-right: 1px solid black; border-bottom: 1px solid black; font-weight: bold;">Pengikut: Nama dan NIP</td>
+                                            <td style="border-right: 1px solid black; border-bottom: 1px solid black; font-weight: bold;">Gol Ruang</td>
+                                            <td style="border-bottom: 1px solid black; font-weight: bold;">Tanda tangan</td>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${followers.length > 0 ? followers.map((f, i) => `
+                                            <tr>
+                                                <td style="border-right: 1px solid black; border-bottom: 1px solid black;">
+                                                    ${i+1}. ${f?.name || ''} <br/> 
+                                                    &nbsp;&nbsp;&nbsp; NIP. ${f?.nip || ''}
+                                                </td>
+                                                <td style="border-right: 1px solid black; border-bottom: 1px solid black;">
+                                                    ${f?.rank || ''} ${f?.grade || ''}
+                                                </td>
+                                                <td style="border-bottom: 1px solid black; text-align: center; vertical-align: middle;">${i+1}.</td>
+                                            </tr>
+                                        `).join('') : `
+                                            <!-- Empty Rows Template -->
+                                            <tr><td style="border-right: 1px solid black; border-bottom: 1px solid black;">1.</td><td style="border-right: 1px solid black; border-bottom: 1px solid black;"></td><td style="border-bottom: 1px solid black;"></td></tr>
+                                            <tr><td style="border-right: 1px solid black; border-bottom: 1px solid black;">2.</td><td style="border-right: 1px solid black; border-bottom: 1px solid black;"></td><td style="border-bottom: 1px solid black;"></td></tr>
+                                        `}
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="text-center">9</td>
+                            <td>
+                                Pembebanan Anggaran:<br/>
+                                a. Instansi<br/>
+                                b. Mata Anggaran
+                            </td>
+                            <td>
+                                a. ${agencySettings.department}<br/>
+                                b. ${fund?.code || '-'}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-center">10</td>
+                            <td>Keterangan lain-lain</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="mt-8 flex justify-between items-end avoid-break">
+                    <!-- Tanda Tangan Pegawai (Kiri) -->
+                    <div class="w-[40%] text-center">
+                        <br/><br/>
+                        <p class="font-bold">Pegawai yang diperintahkan,</p>
+                        <div class="h-20"></div>
+                        <p class="font-bold underline">${emp?.name || '....................'}</p>
+                        <p class="">NIP. ${emp?.nip || '....................'}</p>
+                    </div>
+
+                    <!-- Tanda Tangan Pejabat (Kanan) -->
+                    <div class="w-[50%] text-left">
+                        <div class="mb-4">
+                            Dikeluarkan di : Demak<br/>
+                            Pada Tanggal : ${fmtDate(task.date)}
+                        </div>
+                        ${(() => {
+                            if (task.signatureType === 'AN') {
+                                return `
+                                    <table class="w-full text-[11pt] border-none" style="border-spacing: 0;">
+                                        <tr>
+                                            <td style="vertical-align: top; width: 30px; padding: 0;">a.n.</td>
+                                            <td style="vertical-align: top; padding: 0;">
+                                                ${task.upperTitle || ''}
+                                                <div style="font-weight: bold; text-transform: uppercase;">${signatory?.role || ''},</div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td></td>
+                                            <td style="padding-top: 60px;">
+                                                <p class="font-bold underline m-0">${signatoryEmp?.name || ''}</p>
+                                                <p class="m-0 capitalize">${signatoryEmp?.rank || ''}</p>
+                                                <p class="m-0">NIP ${signatoryEmp?.nip || ''}</p>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                `;
+                            } else if (task.signatureType === 'UB') {
+                                return `
+                                    <table class="w-full text-[11pt] border-none" style="border-spacing: 0;">
+                                        <tr>
+                                            <td style="vertical-align: top; width: 30px; padding: 0;">a.n.</td>
+                                            <td style="vertical-align: top; padding: 0;">
+                                                ${task.upperTitle || ''}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td></td>
+                                            <td style="padding: 0;">
+                                                ${task.intermediateTitle || ''},
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td></td>
+                                            <td style="padding: 0;">
+                                                <div style="margin: 2px 0;">u.b.</div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td></td>
+                                            <td style="padding: 0;">
+                                                <div style="font-weight: bold; text-transform: uppercase;">${signatory?.role || ''},</div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td></td>
+                                            <td style="padding-top: 60px;">
+                                                <p class="font-bold underline m-0">${signatoryEmp?.name || ''}</p>
+                                                <p class="m-0 capitalize">${signatoryEmp?.rank || ''}</p>
+                                                <p class="m-0">NIP ${signatoryEmp?.nip || ''}</p>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                `;
+                            } else {
+                                return `
+                                    <div class="mt-2">
+                                        <p class="font-bold m-0 mb-20 uppercase">${signatory?.role || ''},</p>
+                                        <div class="pt-2">
+                                            <p class="font-bold underline m-0">${signatoryEmp?.name || ''}</p>
+                                            <p class="m-0 capitalize">${signatoryEmp?.rank || ''}</p>
+                                            <p class="m-0">NIP ${signatoryEmp?.nip || ''}</p>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        })()}
+                    </div>
+                </div>
+            </div>
+
+            <div class="page-break"></div>
+
+            <!-- HALAMAN 2: VISUM -->
+            <div class="print-container">
+                <table class="visum-table w-full">
+                    <tbody>
+                        <!-- Row 1: I (Right only) -->
+                        <tr>
+                            <td class="w-1/2"></td>
+                            <td class="w-1/2">
+                                <div class="mb-8">
+                                    <table class="noborder-table w-full">
+                                        <tr><td class="w-5">I.</td><td class="w-28">Berangkat dari</td><td>: Demak</td></tr>
+                                        <tr><td></td><td>(Tempat Kedudukan)</td><td></td></tr>
+                                        <tr><td></td><td>Ke</td><td>: ${destCity?.name || '.............'}</td></tr>
+                                        <tr><td></td><td>Pada Tanggal</td><td>: ${fmtDate(sppd.startDate)}</td></tr>
+                                    </table>
+                                    <div class="mt-4 text-center">
+                                        <p class="font-bold mb-16">${signatory?.role || 'Kepala SKPD'},</p>
+                                        <p class="font-bold underline">${signatoryEmp?.name || '(..................................)'}</p>
+                                        <p>NIP. ${signatoryEmp?.nip || '...................'}</p>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Row 2: II (Left & Right) -->
+                        <tr>
+                            <td class="w-1/2 align-top">
+                                <table class="noborder-table w-full">
+                                    <tr><td class="w-5">II.</td><td class="w-24">Tiba di</td><td>: ${destCity?.name || '.............'}</td></tr>
+                                    <tr><td></td><td>Pada Tanggal</td><td>: ${fmtDate(sppd.startDate)}</td></tr>
+                                </table>
+                                <div class="mt-8 text-center">
+                                    <p class="mb-16">Kepala ....................................</p>
+                                    <p class="font-bold underline">(..............................................)</p>
+                                    <p>NIP.</p>
+                                </div>
+                            </td>
+                            <td class="w-1/2 align-top">
+                                <table class="noborder-table w-full">
+                                    <tr><td class="w-5"></td><td class="w-28">Berangkat dari</td><td>: ${destCity?.name || '.............'}</td></tr>
+                                    <tr><td></td><td>Ke</td><td>: ..........................</td></tr>
+                                    <tr><td></td><td>Pada Tanggal</td><td>: ..........................</td></tr>
+                                </table>
+                                <div class="mt-8 text-center">
+                                    <p class="mb-16">Kepala ....................................</p>
+                                    <p class="font-bold underline">(..............................................)</p>
+                                    <p>NIP.</p>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Row 3: III (Left & Right) -->
+                        <tr>
+                            <td class="w-1/2 align-top">
+                                <table class="noborder-table w-full">
+                                    <tr><td class="w-5">III.</td><td class="w-24">Tiba di</td><td>:</td></tr>
+                                    <tr><td></td><td>Pada Tanggal</td><td>:</td></tr>
+                                </table>
+                                <div class="mt-8 text-center">
+                                    <p class="mb-16">Kepala ....................................</p>
+                                    <p class="font-bold underline">(..............................................)</p>
+                                    <p>NIP.</p>
+                                </div>
+                            </td>
+                            <td class="w-1/2 align-top">
+                                <table class="noborder-table w-full">
+                                    <tr><td class="w-5"></td><td class="w-28">Berangkat dari</td><td>:</td></tr>
+                                    <tr><td></td><td>Ke</td><td>:</td></tr>
+                                    <tr><td></td><td>Pada Tanggal</td><td>:</td></tr>
+                                </table>
+                                <div class="mt-8 text-center">
+                                    <p class="mb-16">Kepala ....................................</p>
+                                    <p class="font-bold underline">(..............................................)</p>
+                                    <p>NIP.</p>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Row 4: IV (Left) & V (Right) -->
+                        <tr>
+                            <td class="w-1/2 align-top">
+                                <table class="noborder-table w-full">
+                                    <tr><td class="w-5">IV.</td><td class="w-24">Tiba di</td><td>: Demak</td></tr>
+                                    <tr><td></td><td>(Tempat Kedudukan)</td><td></td></tr>
+                                    <tr><td></td><td>Pada Tanggal</td><td>: ${fmtDate(sppd.endDate)}</td></tr>
+                                </table>
+                                <div class="mt-4 text-center">
+                                    <p class="font-bold mb-16">Pejabat Berwenang,</p>
+                                    <p class="font-bold underline">${signatoryEmp?.name || '(..................................)'}</p>
+                                    <p>NIP. ${signatoryEmp?.nip || '...................'}</p>
+                                </div>
+                            </td>
+                            <td class="w-1/2 align-top text-justify">
+                                <div class="flex">
+                                    <span class="w-6 font-bold">V.</span>
+                                    <span>Telah diperiksa dengan keterangan bahwa perjalanan atas perintahnya dan semata-mata untuk kepentingan jabatan dalam waktu yang sesingkat-singkatnya.</span>
+                                </div>
+                                <div class="mt-4 mb-4">
+                                    Demak,<br/>
+                                    Pejabat Berwenang Lainnya,
+                                </div>
+                                <div class="mt-16 text-center">
+                                    <p class="font-bold underline">(..............................................)</p>
+                                    <p>NIP.</p>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Row 5: VI & VII -->
+                        <tr>
+                            <td colspan="2" class="p-2">
+                                <div class="font-bold mb-2">VI. Catatan Lain-lain:</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="2" class="p-2">
+                                <div class="font-bold mb-1">VII. PERHATIAN:</div>
+                                <p class="text-justify leading-snug">Pejabat yang berwenang menerbitkan SPPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat/tiba, serta bendaharawan bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila Negara menderita rugi akibat kesalahan, kelalaian, dan kealpaannya.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </body>
+        </html>
+      `;
+
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+          newWindow.document.open();
+          newWindow.document.write(printContent);
+          newWindow.document.close();
+      } else {
+          alert("Pop-up diblokir. Izinkan pop-up untuk mencetak.");
+      }
+  };
+
+  // --- RENDERERS (REPLACED GRID WITH TABLE) ---
+
+  const renderReadyTable = () => (
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                  <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                          <th className="px-6 py-4">No. Surat Tugas</th>
+                          <th className="px-6 py-4">Tgl Surat</th>
+                          <th className="px-6 py-4">Perihal</th>
+                          <th className="px-6 py-4">Pegawai</th>
+                          <th className="px-6 py-4">Tujuan</th>
+                          <th className="px-6 py-4 text-right">Aksi</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                      {readyList.map(task => {
+                          const mainEmp = employees.find(e => e.id === task.employeeIds[0]);
+                          const dest = cities.find(c => c.id === task.destinationId)?.name || '-';
+                          return (
+                              <tr key={task.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-6 py-4 font-bold text-indigo-600 font-mono">{task.number}</td>
+                                  <td className="px-6 py-4 text-slate-500">{new Date(task.date).toLocaleDateString('id-ID')}</td>
+                                  <td className="px-6 py-4 max-w-xs truncate" title={task.subject}>{task.subject}</td>
+                                  <td className="px-6 py-4 font-medium text-slate-800">{mainEmp?.name || '-'}</td>
+                                  <td className="px-6 py-4">
+                                      <div className="flex items-center text-slate-600">
+                                          {dest} <ArrowRight size={12} className="mx-1 text-slate-400"/> {task.duration} Hari
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                      <button 
+                                        onClick={() => openCreateModal(task)} 
+                                        className="inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow hover:bg-indigo-700 transition-all"
+                                      >
+                                          <FilePlus size={14} className="mr-1"/> Terbitkan
+                                      </button>
+                                  </td>
+                              </tr>
+                          );
+                      })}
+                      {readyList.length === 0 && (
+                          <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400 italic">Tidak ada data Surat Tugas yang siap diterbitkan.</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      </div>
+  );
+
+  const renderIssuedTable = () => (
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                  <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                          <th className="px-6 py-4">No. SPPD</th>
+                          <th className="px-6 py-4">Dasar Surat Tugas</th>
+                          <th className="px-6 py-4">Pegawai</th>
+                          <th className="px-6 py-4">Tujuan</th>
+                          <th className="px-6 py-4">Tanggal</th>
+                          <th className="px-6 py-4 text-center">Status</th>
+                          <th className="px-6 py-4 text-right">Aksi</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-sm">
+                      {issuedList.map(s => {
+                          const details = getHelperDetails(s.assignmentId);
+                          return (
+                              <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-6 py-4 font-bold text-slate-900 font-mono">{s.id}</td>
+                                  <td className="px-6 py-4 text-xs font-mono text-slate-500">{details.refNumber}</td>
+                                  <td className="px-6 py-4 font-medium text-slate-800">{details.empName}</td>
+                                  <td className="px-6 py-4 text-slate-600">{details.dest}</td>
+                                  <td className="px-6 py-4 text-slate-500 text-xs">
+                                      {new Date(s.startDate).toLocaleDateString('id-ID')} s/d <br/> 
+                                      {new Date(s.endDate).toLocaleDateString('id-ID')}
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                      <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md ${s.status === 'Selesai' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                          {s.status}
+                                      </span>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                      <div className="flex items-center justify-end space-x-1">
+                                          <button onClick={() => openEditModal(s)} className="p-1.5 text-slate-500 hover:text-indigo-600 bg-slate-50 hover:bg-indigo-50 rounded-md transition-colors" title="Edit"><Edit2 size={16}/></button>
+                                          <button onClick={() => handlePrint(s)} className="p-1.5 text-slate-500 hover:text-emerald-600 bg-slate-50 hover:bg-emerald-50 rounded-md transition-colors" title="Cetak"><Printer size={16}/></button>
+                                          <button onClick={() => { setItemToDelete(s.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-md transition-colors" title="Hapus"><Trash2 size={16}/></button>
+                                      </div>
+                                  </td>
+                              </tr>
+                          );
+                      })}
+                      {issuedList.length === 0 && (
+                          <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-400 italic">Belum ada SPPD yang diterbitkan.</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      </div>
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center print:hidden">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Penerbitan SPPD</h1>
-          <p className="text-slate-500">Kelola penerbitan dokumen SPPD berdasarkan Surat Tugas yang disetujui.</p>
+            <h1 className="text-2xl font-bold text-slate-900">Penerbitan SPPD</h1>
+            <p className="text-slate-500">Kelola dan cetak Surat Perintah Perjalanan Dinas.</p>
         </div>
-      </div>
-
-      {isAdmin && readyToProcess.length > 0 && (
-        <div className="space-y-4 print:hidden">
-          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center">
-            <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div>
-            Surat Tugas Siap Proses SPPD ({readyToProcess.length})
-          </h3>
-          <div className="grid grid-cols-1 gap-4">
-            {readyToProcess.map(task => (
-              <div key={task.id} className="bg-white p-5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between">
-                <div>
-                  <h4 className="font-bold text-slate-900">{task.subject}</h4>
-                  <p className="text-sm text-slate-500">{task.number}</p>
-                </div>
-                <button onClick={() => handleCreateFromAssignment(task)} className="px-4 py-2 bg-indigo-600 text-white font-bold text-sm rounded-lg flex items-center">
-                  Terbitkan SPPD <ArrowRight size={16} className="ml-2" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-4 print:hidden">
-         <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div>
-          Dokumen SPPD Terbit ({sppds.length})
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {sppds.map((s) => {
-            const details = getTaskDetails(s.assignmentId);
-            return (
-              <div key={s.id} className="bg-white p-6 rounded-2xl border shadow-sm">
-                <div className="flex justify-between items-start mb-6">
-                  <div><h3 className="font-bold">{s.id}</h3><p className="text-xs text-slate-400">Ref: {details.ref}</p></div>
-                  <div className="flex space-x-1">
-                    {isAdmin && (
-                      <>
-                        {/* Changed DollarSign to Banknote */}
-                        <button onClick={() => navigate('/kwitansi', { state: { createSppdId: s.id } })} className="p-1.5 bg-emerald-100 text-emerald-600 rounded-lg hover:bg-emerald-200" title="Rincian Biaya">
-                            <Banknote size={16} />
-                        </button>
-                        <button onClick={() => {setItemToDelete(s.id); setIsDeleteModalOpen(true);}} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg" title="Hapus">
-                            <Trash2 size={16}/>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t flex space-x-2">
-                  {isAdmin && (
-                    <button onClick={() => {setPrintingSppd(s); setIsPrintModalOpen(true);}} className="flex-1 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg flex items-center justify-center space-x-2">
-                      <Printer size={16} /><span>Cetak SPPD</span>
-                    </button>
-                  )}
-                  {!isAdmin && <span className="text-xs text-slate-400">View Only</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <ConfirmationModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={confirmDelete} title="Hapus SPPD" message="Hapus data?" />
-    
-      {/* SPPD CREATE MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="p-6 border-b flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-900">Terbitkan SPPD Baru</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+        <div className="flex items-center space-x-2">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                    type="text" 
+                    placeholder="Cari Nomor / Pegawai..." 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-64 shadow-sm"
+                />
             </div>
-            <form onSubmit={handleSave} className="p-6 space-y-4">
-              <div>
-                 <label className="block text-sm font-semibold text-slate-700 mb-1">Nomor SPPD</label>
-                 <input type="text" required value={formData.id} onChange={(e) => setFormData({...formData, id: e.target.value})} className="w-full px-4 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm" />
-              </div>
-              <div>
-                 <label className="block text-sm font-semibold text-slate-700 mb-1">Referensi Surat Tugas</label>
-                 <input type="text" readOnly value={formData.ref} className="w-full px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl text-sm text-slate-500" />
-              </div>
-              <div>
-                 <label className="block text-sm font-semibold text-slate-700 mb-1">Pegawai</label>
-                 <textarea readOnly value={formData.displayEmployeeNames} className="w-full px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl text-sm text-slate-500" rows={2}/>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Moda Transportasi</label>
-                    <select required value={formData.transportId} onChange={(e) => setFormData({...formData, transportId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm">
-                        <option value="">-- Pilih --</option>
-                        {transportModes.map(m => <option key={m.id} value={m.id}>{m.type}</option>)}
-                    </select>
+            <button onClick={fetchData} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><RefreshCw size={20} className={isLoading ? "animate-spin" : ""} /></button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit print:hidden">
+          <button 
+            onClick={() => setActiveTab('Ready')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center space-x-2 ${activeTab === 'Ready' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <Clock size={16} /> <span>Siap Diterbitkan</span>
+            {readyList.length > 0 && <span className="ml-2 bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded-full">{readyList.length}</span>}
+          </button>
+          <button 
+            onClick={() => setActiveTab('Issued')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center space-x-2 ${activeTab === 'Issued' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <CheckCircle2 size={16} /> <span>Sudah Diterbitkan</span>
+          </button>
+      </div>
+
+      <div className="print:hidden">
+          {activeTab === 'Ready' ? renderReadyTable() : renderIssuedTable()}
+      </div>
+
+      {/* EDIT / CREATE MODAL */}
+      {isFormModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95">
+                  <div className="p-5 border-b flex justify-between items-center">
+                      <h3 className="font-bold text-slate-900">
+                          {editingSppd ? 'Edit Data SPPD' : 'Terbitkan SPPD Baru'}
+                      </h3>
+                      <button onClick={() => setIsFormModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Sumber Dana</label>
-                    <select required value={formData.fundingId} onChange={(e) => setFormData({...formData, fundingId: e.target.value})} className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-sm">
-                        <option value="">-- Pilih --</option>
-                        {fundingSources.map(f => <option key={f.id} value={f.id}>{f.code}</option>)}
-                    </select>
-                  </div>
+                  <form onSubmit={handleSave} className="p-6 space-y-4">
+                      {selectedAssignment && (
+                          <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 mb-4">
+                              <p className="text-xs text-indigo-500 font-bold uppercase mb-1">Referensi Surat Tugas</p>
+                              <p className="text-sm font-bold text-indigo-900">{selectedAssignment.number}</p>
+                              <p className="text-xs text-indigo-700 mt-1">{selectedAssignment.subject}</p>
+                          </div>
+                      )}
+                      
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Moda Transportasi</label>
+                          <select 
+                            required
+                            value={formData.transportId} 
+                            onChange={(e) => setFormData({...formData,transportId: e.target.value})}
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                              <option value="">-- Pilih Transportasi --</option>
+                              {transportModes.map(t => <option key={t.id} value={t.id}>{t.type}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sumber Anggaran</label>
+                          <select 
+                            required
+                            value={formData.fundingId} 
+                            onChange={(e) => setFormData({...formData, fundingId: e.target.value})}
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                              <option value="">-- Pilih Anggaran --</option>
+                              {fundingSources.map(f => <option key={f.id} value={f.id}>{f.name} ({f.code})</option>)}
+                          </select>
+                      </div>
+                      <div className="pt-4 flex space-x-3">
+                          <button type="button" onClick={() => setIsFormModalOpen(false)} className="flex-1 py-2 bg-slate-100 text-slate-600 font-bold rounded-xl text-sm">Batal</button>
+                          <button type="submit" className="flex-1 py-2 bg-indigo-600 text-white font-bold rounded-xl text-sm shadow hover:bg-indigo-700 flex items-center justify-center space-x-2">
+                              <Save size={16}/><span>{editingSppd ? 'Simpan Perubahan' : 'Terbitkan Sekarang'}</span>
+                          </button>
+                      </div>
+                  </form>
               </div>
-              <div className="pt-4">
-                 <button type="submit" className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700">Simpan & Terbitkan</button>
-              </div>
-            </form>
           </div>
-        </div>
       )}
 
-      {/* PRINT MODAL SPPD - USING FULL IMAGE HEADER */}
-      {isPrintModalOpen && printingSppd && (
-        <div className="fixed inset-0 z-[60] bg-white flex flex-col h-screen w-screen overflow-hidden">
-             <div className="bg-slate-800 text-white p-4 flex justify-between items-center shadow-md print:hidden">
-                 <h2 className="text-lg font-bold flex items-center"><Printer className="mr-2"/> Pratinjau Cetak SPPD</h2>
-                 <div className="flex items-center space-x-3">
-                     <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-bold text-sm transition-colors">Cetak Sekarang</button>
-                     <button onClick={() => setIsPrintModalOpen(false)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold text-sm transition-colors">Tutup</button>
-                 </div>
-             </div>
-             
-             <div className="flex-1 overflow-auto bg-slate-100 p-8 print:p-0 print:bg-white print:overflow-visible">
-                 <div className="max-w-[210mm] mx-auto bg-white p-[20mm] shadow-xl print:shadow-none print:w-full print:max-w-none print:mx-0">
-                     
-                     {/* FULL WIDTH IMAGE HEADER (Updated to use kopSuratUrl) */}
-                     <div className="mb-6 w-full">
-                         {agencySettings.kopSuratUrl ? (
-                             <img 
-                               src={agencySettings.kopSuratUrl} 
-                               alt="Kop Surat" 
-                               className="w-full h-auto object-contain max-h-[150px] mx-auto" 
-                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                             />
-                         ) : (
-                             <div className="w-full text-center p-4 border border-dashed text-slate-400">
-                                 [Kop Surat Belum Diatur]
-                             </div>
-                         )}
-                     </div>
-
-                     <div className="text-center mb-8">
-                         <h2 className="text-xl font-bold underline uppercase decoration-2 underline-offset-4">SURAT PERJALANAN DINAS (SPD)</h2>
-                         <p className="text-sm mt-1 font-bold">Nomor : {printingSppd.id}</p>
-                     </div>
-
-                     <div className="space-y-4 font-serif text-[11pt]">
-                        {(() => {
-                           const task = assignments.find(a => a.id === printingSppd.assignmentId);
-                           const empId = task?.employeeIds[0]; // Assuming first employee for simple SPPD print
-                           const emp = employees.find(e => e.id === empId);
-                           const transport = transportModes.find(t => t.id === printingSppd.transportId);
-                           const funding = fundingSources.find(f => f.id === printingSppd.fundingId);
-                           const city = cities.find(c => c.id === task?.destinationId);
-                           const signatory = signatories.find(s => s.id === task?.signatoryId);
-                           
-                           // Find the PPK or KPA
-                           const ppk = signatories.find(s => s.role.includes('Komitmen') || s.role.includes('Pengguna')) || signatory;
-
-                           return (
-                               <table className="w-full border border-black border-collapse">
-                                   <tbody>
-                                       <tr>
-                                           <td className="border border-black p-2 w-10 text-center">1.</td>
-                                           <td className="border border-black p-2 w-1/3">Pejabat Pembuat Komitmen</td>
-                                           <td className="border border-black p-2 font-bold">{ppk?.role || 'Kuasa Pengguna Anggaran'}</td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">2.</td>
-                                           <td className="border border-black p-2">Nama Pegawai yang diperintah</td>
-                                           <td className="border border-black p-2 font-bold">{emp?.name}</td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">3.</td>
-                                           <td className="border border-black p-2">
-                                               a. Pangkat dan Golongan<br/>
-                                               b. Jabatan / Instansi<br/>
-                                               c. Tingkat Biaya Perjalanan Dinas
-                                           </td>
-                                           <td className="border border-black p-2">
-                                               a. {emp?.grade}<br/>
-                                               b. {emp?.position}<br/>
-                                               c. -
-                                           </td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">4.</td>
-                                           <td className="border border-black p-2">Maksud Perjalanan Dinas</td>
-                                           <td className="border border-black p-2">{task?.subject}</td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">5.</td>
-                                           <td className="border border-black p-2">Alat Angkutan yang dipergunakan</td>
-                                           <td className="border border-black p-2">{transport?.type || '-'}</td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">6.</td>
-                                           <td className="border border-black p-2">
-                                               a. Tempat Berangkat<br/>
-                                               b. Tempat Tujuan
-                                           </td>
-                                           <td className="border border-black p-2">
-                                               a. {agencySettings.name.replace('PEMERINTAH ', '')}<br/>
-                                               b. {city?.name}
-                                           </td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">7.</td>
-                                           <td className="border border-black p-2">
-                                               a. Lamanya Perjalanan Dinas<br/>
-                                               b. Tanggal Berangkat<br/>
-                                               c. Tanggal Harus Kembali
-                                           </td>
-                                           <td className="border border-black p-2">
-                                               a. {task?.duration} (Hari)<br/>
-                                               b. {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}<br/>
-                                               c. {new Date(printingSppd.endDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
-                                           </td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">8.</td>
-                                           <td className="border border-black p-2">Pembebanan Anggaran</td>
-                                           <td className="border border-black p-2">
-                                               a. Instansi: {agencySettings.department}<br/>
-                                               b. Mata Anggaran: {funding?.code}
-                                           </td>
-                                       </tr>
-                                       <tr>
-                                           <td className="border border-black p-2 text-center">9.</td>
-                                           <td className="border border-black p-2">Keterangan Lain-lain</td>
-                                           <td className="border border-black p-2">Lihat Sebelah</td>
-                                       </tr>
-                                   </tbody>
-                               </table>
-                           );
-                        })()}
-                     </div>
-
-                     <div className="mt-8 flex justify-end">
-                         <div className="w-80 text-center font-serif text-[11pt]">
-                             <p className="mb-1">Ditetapkan di Demak</p>
-                             <p className="mb-4">Pada Tanggal {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
-                             <p className="font-bold mb-20">PEJABAT PEMBUAT KOMITMEN</p>
-                             <p className="font-bold underline text-sm">( ..................................................... )</p>
-                             <p className="text-sm">NIP. ..........................................</p>
-                         </div>
-                     </div>
-
-                     {/* HALAMAN 2: VISUM */}
-                     <div className="break-before-page mt-12 pt-8">
-                        <div className="font-serif text-[11pt]">
-                            <div className="grid grid-cols-2 gap-0 border border-black">
-                                {/* KOLOM KIRI */}
-                                <div className="border-r border-black p-4 space-y-20">
-                                    <div></div> {/* Spacer */}
-                                    
-                                    <div>
-                                        <p>II. Tiba di: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
-                                        <p>Pada Tanggal: ..............................</p>
-                                        <p className="mb-12">Kepala:</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-
-                                    <div>
-                                        <p>III. Tiba di: ..............................</p>
-                                        <p>Pada Tanggal: ..............................</p>
-                                        <p className="mb-12">Kepala:</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-                                    
-                                    <div>
-                                        <p>IV. Tiba di: {agencySettings.name.replace('PEMERINTAH ','')}</p>
-                                        <p>Pada Tanggal: ..............................</p>
-                                        <p className="mb-12">Pejabat Pembuat Komitmen</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-                                </div>
-
-                                {/* KOLOM KANAN */}
-                                <div className="p-4 space-y-20">
-                                    <div>
-                                        <p>I. Berangkat dari: {agencySettings.name.replace('PEMERINTAH ','')}</p>
-                                        <p>(Tempat Kedudukan)</p>
-                                        <p>Ke: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
-                                        <p>Pada Tanggal: {new Date(printingSppd.startDate).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</p>
-                                        <p className="mb-12">Pejabat Pembuat Komitmen</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-
-                                    <div>
-                                        <p>Berangkat dari: {cities.find(c => c.id === assignments.find(a => a.id === printingSppd.assignmentId)?.destinationId)?.name}</p>
-                                        <p>Ke: ..............................</p>
-                                        <p>Pada Tanggal: ..............................</p>
-                                        <p className="mb-12">Kepala:</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-
-                                    <div>
-                                        <p>Berangkat dari: ..............................</p>
-                                        <p>Ke: ..............................</p>
-                                        <p>Pada Tanggal: ..............................</p>
-                                        <p className="mb-12">Kepala:</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-                                    
-                                    <div>
-                                        <p className="text-justify text-xs">
-                                            Telah diperiksa dengan keterangan bahwa perjalanan tersebut diatas
-                                            benar dilakukan atas perintahnya dan semata-mata untuk kepentingan
-                                            jabatan dalam waktu yang sesingkat-singkatnya.
-                                        </p>
-                                        <p className="mb-12 mt-4">Pejabat Pembuat Komitmen</p>
-                                        <p className="font-bold underline">(.............................................)</p>
-                                        <p>NIP.</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="mt-4 border border-black p-4">
-                                <p className="font-bold underline mb-2">V. CATATAN LAIN-LAIN</p>
-                                <p>VII. PERHATIAN:</p>
-                                <p className="text-xs">
-                                    PPK yang menerbitkan SPD, pegawai yang melakukan perjalanan dinas, para pejabat yang mengesahkan tanggal berangkat/tiba, serta bendahara pengeluaran bertanggung jawab berdasarkan peraturan-peraturan Keuangan Negara apabila negara menderita rugi akibat kesalahan, kelalaian, dan kealpaannya.
-                                </p>
-                            </div>
-                        </div>
-                     </div>
-                 </div>
-             </div>
-        </div>
-      )}
+      {/* CONFIRM DELETE MODAL */}
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="Hapus SPPD"
+        message="Apakah Anda yakin ingin menghapus data SPPD ini? Data yang dihapus tidak dapat dikembalikan."
+      />
     </div>
   );
 };

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Map, Trash2, Edit2, X, Wallet, RefreshCw, CheckCircle2 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { City } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -20,21 +20,6 @@ const CityManager: React.FC = () => {
   // Delete Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     fetchCities();

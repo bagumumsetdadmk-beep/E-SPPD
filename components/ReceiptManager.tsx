@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Receipt as ReceiptIcon, X, Plus, Trash2, Edit2, Printer, CheckCircle, RefreshCw } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabase } from '../supabaseClient';
 import { Receipt, SPPD, AssignmentLetter, Employee, City, Signatory, FundingSource, AgencySettings, User } from '../types';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -53,27 +53,36 @@ const ReceiptManager: React.FC = () => {
 
   const isAdmin = user?.role === 'Admin';
 
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
-
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) setUser(JSON.parse(savedUser));
     loadMasterData();
     fetchReceiptsAndRefs();
+    fetchSettingsFromDb(); // Fetch settings on mount
   }, []);
+
+  // NEW: Fetch Fresh Settings from DB
+  const fetchSettingsFromDb = async () => {
+      const client = getSupabase();
+      if (!client) return;
+      try {
+          const { data } = await client.from('agency_settings').select('*').limit(1).maybeSingle();
+          if (data) {
+              const newSettings: AgencySettings = {
+                  name: data.name,
+                  department: data.department,
+                  address: data.address,
+                  contactInfo: data.contact_info,
+                  logoUrl: data.logo_url,
+                  kopSuratUrl: data.kop_surat_url // Ensure mapping
+              };
+              setAgencySettings(newSettings);
+              localStorage.setItem('agency_settings', JSON.stringify(newSettings));
+          }
+      } catch (e) {
+          console.error("Failed to sync settings", e);
+      }
+  };
 
   const loadMasterData = () => {
     setSppds(JSON.parse(localStorage.getItem('sppd_data') || '[]'));
@@ -82,6 +91,7 @@ const ReceiptManager: React.FC = () => {
     setCities(JSON.parse(localStorage.getItem('cities') || '[]'));
     setSignatories(JSON.parse(localStorage.getItem('signatories') || '[]'));
     setFundingSources(JSON.parse(localStorage.getItem('funding_sources') || '[]'));
+    
     const settingsData = localStorage.getItem('agency_settings');
     if (settingsData) setAgencySettings(JSON.parse(settingsData));
   };
@@ -143,9 +153,14 @@ const ReceiptManager: React.FC = () => {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center print:hidden">
         <div><h1 className="text-2xl font-bold text-slate-900">Rincian Biaya</h1><p className="text-slate-500">Kelola rincian biaya perjalanan dinas.</p></div>
-        {isAdmin && (
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium"><Plus size={18} /><span>Buat Rincian</span></button>
-        )}
+        <div className="flex items-center space-x-2">
+            <button onClick={() => { fetchReceiptsAndRefs(); fetchSettingsFromDb(); }} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} />
+            </button>
+            {isAdmin && (
+              <button onClick={() => setIsModalOpen(true)} className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium"><Plus size={18} /><span>Buat Rincian</span></button>
+            )}
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {receipts.map(r => (

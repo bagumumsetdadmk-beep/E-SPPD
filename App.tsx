@@ -51,71 +51,39 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [agencyLogo, setAgencyLogo] = useState<string | null>(null);
-  
   const location = useLocation();
   const navigate = useNavigate();
-
-  const getSupabase = () => {
-    const env = (import.meta as any).env;
-    if (env?.VITE_SUPABASE_URL && env?.VITE_SUPABASE_KEY) {
-      return createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_KEY);
-    }
-    const saved = localStorage.getItem('supabase_config');
-    if (saved) {
-      try {
-        const config = JSON.parse(saved);
-        if (config.url && config.key) return createClient(config.url, config.key);
-      } catch (e) {}
-    }
-    return null;
-  };
 
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Failed to parse saved user from localStorage:", e);
+        localStorage.removeItem('currentUser'); // Clear invalid data
+      }
     }
-
+    
     const savedSettings = localStorage.getItem('agency_settings');
     if (savedSettings) {
       try {
-        const parsed: AgencySettings = JSON.parse(savedSettings);
-        setAgencyLogo(parsed.logoUrl);
-      } catch (e) {}
-    }
-
-    const fetchLogo = async () => {
-        const client = getSupabase();
-        if (client) {
-            try {
-                const { data } = await client.from('agency_settings').select('logo_url').limit(1).maybeSingle();
-                if (data && data.logo_url) {
-                    setAgencyLogo(data.logo_url);
-                }
-            } catch(e) {}
+        const parsedSettings = JSON.parse(savedSettings);
+        if (parsedSettings && parsedSettings.logoUrl) { // Safely access logoUrl
+          setAgencyLogo(parsedSettings.logoUrl);
         }
-    };
-    fetchLogo();
+      } catch (e) {
+        console.error("Failed to parse agency settings from localStorage:", e);
+        localStorage.removeItem('agency_settings'); // Clear invalid data
+      }
+    }
   }, []);
-
-  const handleLogin = (role: UserRole, name: string) => {
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: name,
-      role: role
-    };
-    setUser(newUser);
-    localStorage.setItem('currentUser', JSON.stringify(newUser));
-    navigate('/');
-  };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('currentUser');
     navigate('/');
   };
-
-  const isAdmin = user?.role === 'Admin';
 
   const menuItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['Admin', 'Operator', 'Verificator'] },
@@ -131,122 +99,31 @@ const App: React.FC = () => {
     { to: '/pengaturan', icon: Settings, label: 'Pengaturan', roles: ['Admin'] },
   ];
 
-  const filteredMenuItems = menuItems.filter(item => item.roles.includes(user?.role || ''));
-
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  };
-
-  const getRoleBadgeColor = (role: UserRole) => {
-    switch (role) {
-      case 'Admin': return 'bg-indigo-500 text-white';
-      case 'Operator': return 'bg-emerald-500 text-white';
-      case 'Verificator': return 'bg-amber-500 text-white';
-      default: return 'bg-slate-500 text-white';
-    }
-  };
+  if (!user) return <Login onLogin={(role, name) => { const u = { id: '1', name, role }; setUser(u); localStorage.setItem('currentUser', JSON.stringify(u)); }} />;
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans">
-      {!sidebarOpen && (
-        <button 
-          onClick={() => setSidebarOpen(true)}
-          className="fixed top-4 left-4 z-50 p-2 bg-indigo-600 text-white rounded-md lg:hidden shadow-md"
-        >
-          <Menu size={20} />
-        </button>
-      )}
-
-      <aside 
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 transition-transform duration-300 transform lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
+      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-black transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between p-6">
-            <div className="flex items-center space-x-3">
-              {agencyLogo ? (
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center p-1">
-                   <img src={agencyLogo} alt="Logo" className="w-full h-full object-contain" />
-                </div>
-              ) : (
-                <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
-                  <FileText className="text-white" size={20} />
-                </div>
-              )}
-              <h1 className="text-xl font-bold text-white tracking-tight">E-SPPD</h1>
-            </div>
-            <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400">
-              <X size={24} />
-            </button>
+          <div className="p-6 flex items-center justify-between">
+            <h1 className="text-xl font-bold text-white tracking-tight">E-SPPD</h1>
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-white"><X size={24} /></button>
           </div>
-
-          <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-4">Menu Utama</p>
-            {filteredMenuItems.map((item) => (
-              <SidebarItem 
-                key={item.to} 
-                {...item} 
-                active={location.pathname === item.to} 
-              />
-            ))}
+          <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+            {menuItems.filter(i => i.roles.includes(user.role)).map(item => <SidebarItem key={item.to} {...item} active={location.pathname === item.to} />)}
           </nav>
-
-          <div className="p-4 bg-slate-800 m-4 rounded-xl">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${getRoleBadgeColor(user.role)}`}>
-                {getInitials(user.name)}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-sm font-semibold text-white truncate">{user.name}</p>
-                <p className="text-xs text-slate-400">{user.role}</p>
-              </div>
-            </div>
-            <button 
-              onClick={handleLogout}
-              className="flex items-center space-x-2 text-rose-400 text-sm font-medium hover:text-rose-300 w-full px-2 py-1.5 rounded transition-colors hover:bg-slate-700/50"
-            >
-              <LogOut size={16} />
-              <span>Keluar Sesi</span>
-            </button>
+          <div className="p-4 bg-slate-900 m-4 rounded-xl">
+            <p className="text-sm font-bold text-white mb-1 truncate">{user.name}</p>
+            <p className="text-xs text-slate-400 mb-3">{user.role}</p>
+            <button onClick={handleLogout} className="text-rose-400 text-sm flex items-center space-x-2"><LogOut size={16} /><span>Keluar</span></button>
           </div>
         </div>
       </aside>
-
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
-        <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center space-x-4">
-            <div className="relative group hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500" size={18} />
-              <input 
-                type="text" 
-                placeholder="Cari data..." 
-                className="pl-10 pr-4 py-2 bg-slate-100 rounded-full text-sm border-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none w-64 transition-all"
-              />
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full relative transition-all">
-              <Bell size={20} />
-              <span className="absolute top-1.5 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
-            </button>
-            <div className="h-8 w-px bg-slate-200"></div>
-            <div className="flex items-center space-x-2 cursor-pointer group">
-              <div className="text-right">
-                <p className="text-sm font-semibold group-hover:text-indigo-600">
-                  {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </p>
-                <p className="text-xs text-slate-500">Selamat Datang, {user.role}</p>
-              </div>
-            </div>
-          </div>
+      <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
+        <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm print:hidden">
+            <button onClick={() => setSidebarOpen(true)} className={`${sidebarOpen ? 'hidden' : 'block'} p-2`}><Menu size={20}/></button>
+            <div className="flex items-center space-x-4"><p className="text-sm font-bold text-slate-700">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
         </header>
-
         <div className="p-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -267,10 +144,4 @@ const App: React.FC = () => {
   );
 };
 
-export default function AppWithRouter() {
-  return (
-    <HashRouter>
-      <App />
-    </HashRouter>
-  );
-}
+export default function AppWithRouter() { return <HashRouter><App /></HashRouter>; }

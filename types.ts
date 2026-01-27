@@ -21,8 +21,8 @@ export interface AgencySettings {
   department: string;  // e.g., SEKRETARIAT DAERAH
   address: string;     // e.g., Jalan Kyai Singkil 7...
   contactInfo: string; // e.g., Telp: (0291) ...
-  logoUrl: string;     // Used for App UI (Sidebar, Login)
-  kopSuratUrl?: string; // New: Used for Printed Documents (Full Image)
+  logoUrl?: string;    // Updated to optional: Used for App UI (Sidebar, Login)
+  kopSuratUrl?: string; // Used for Printed Documents (Full Image)
 }
 
 export interface Employee {
@@ -30,7 +30,8 @@ export interface Employee {
   nip: string;
   name: string;
   position: string;
-  grade: string;
+  rank?: string; // New Field: Pangkat (e.g., Penata)
+  grade: string; // Golongan (e.g., III/c)
 }
 
 export interface Signatory {
